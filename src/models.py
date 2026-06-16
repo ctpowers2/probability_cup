@@ -114,46 +114,110 @@ class MatchModel:
             return getattr(self, f"mu_{stat}_{side}")
         return getattr(self, f"{half}_{stat}_{side}")
 
-    def p_ge(self, stat: str, side: str, n: int, half: str = "full") -> float:
-        """P(stat_side >= n)"""
-        lam = self.mu(stat, side, half)
-        return float(1 - poisson.cdf(n - 1, lam))
-
-    def p_total_ge(self, stat: str, n: int, half: str = "full") -> float:
-        """P(stat_a + stat_b >= n)"""
-        lam = self.mu(stat, "a", half) + self.mu(stat, "b", half)
-        return float(1 - poisson.cdf(n - 1, lam))
-
     def p_a_gt_b(self, stat: str, half: str = "full", max_k: int = 35) -> float:
         """P(stat_a > stat_b)"""
         lam_a = self.mu(stat, "a", half)
         lam_b = self.mu(stat, "b", half)
         return _prob_a_gt_b(lam_a, lam_b, max_k)
 
+    # ------------------------------------------------------------------ #
+    # Live match adjustment                                                #
+    # ------------------------------------------------------------------ #
+
+    def apply_live(self, score_a: int, score_b: int, minute: int) -> None:
+        """
+        Scale all Poisson means for remaining time and store the current score.
+        Modifies in-place — call once after construction.
+        """
+        self.live = True
+        self.score_a = score_a
+        self.score_b = score_b
+        self.minute = max(0, min(90, minute))
+
+        full_r = max(0.0, (90 - self.minute) / 90)
+
+        for stat in ("goals", "sot", "corners", "fouls", "offsides", "yellows"):
+            for side in ("a", "b"):
+                attr = f"mu_{stat}_{side}"
+                setattr(self, attr, getattr(self, attr) * full_r)
+
+        h1_r = max(0.0, (45 - self.minute) / 45) if self.minute <= 45 else 0.0
+        h2_r = 1.0 if self.minute <= 45 else max(0.0, (90 - self.minute) / 45)
+
+        for stat in ("goals", "sot", "corners", "fouls", "offsides", "yellows"):
+            for side in ("a", "b"):
+                setattr(self, f"h1_{stat}_{side}",
+                        getattr(self, f"h1_{stat}_{side}") * h1_r)
+                setattr(self, f"h2_{stat}_{side}",
+                        getattr(self, f"h2_{stat}_{side}") * h2_r)
+
+        foul_factor = (self.mu_fouls_a + self.mu_fouls_b) / (2 * LEAGUE["fouls"])
+        self.prob_red_card = 1 - (1 - BASE_RED_CARD_RATE * foul_factor) ** 2
+        self.prob_pen_or_red = 1 - (1 - self.prob_penalty) * (1 - self.prob_red_card)
+
+    # ------------------------------------------------------------------ #
+    # Probability helpers (live-aware)                                     #
+    # ------------------------------------------------------------------ #
+
     def p_win(self, side: str, max_g: int = 12) -> float:
-        """P(side wins the match). side in {'a', 'b'}."""
+        """P(side wins). Live-aware: conditions on current score + remaining lambdas."""
         mu_win, mu_lose = (
             (self.mu_goals_a, self.mu_goals_b) if side == "a"
             else (self.mu_goals_b, self.mu_goals_a)
         )
+        lead = 0
+        if getattr(self, "live", False):
+            lead = (self.score_a - self.score_b) if side == "a" else (self.score_b - self.score_a)
         p = 0.0
         for g_win in range(max_g + 1):
-            for g_lose in range(g_win):
-                p += poisson.pmf(g_win, mu_win) * poisson.pmf(g_lose, mu_lose)
+            for g_lose in range(max_g + 1):
+                if lead + g_win - g_lose > 0:
+                    p += poisson.pmf(g_win, mu_win) * poisson.pmf(g_lose, mu_lose)
         return float(p)
 
     def p_draw(self, max_g: int = 10) -> float:
-        """P(draw)."""
+        """P(draw at FT). Live-aware: conditions on current score."""
+        sa = getattr(self, "score_a", 0)
+        sb = getattr(self, "score_b", 0)
         p = 0.0
-        for g in range(max_g + 1):
-            p += poisson.pmf(g, self.mu_goals_a) * poisson.pmf(g, self.mu_goals_b)
+        for da in range(max_g + 1):
+            db = da - (sb - sa)  # need sa+da = sb+db
+            if 0 <= db <= max_g:
+                p += float(poisson.pmf(da, self.mu_goals_a)) * float(poisson.pmf(db, self.mu_goals_b))
         return float(p)
 
     def p_btts(self) -> float:
-        """P(both teams score >= 1)."""
-        p_a_scores = 1 - poisson.pmf(0, self.mu_goals_a)
-        p_b_scores = 1 - poisson.pmf(0, self.mu_goals_b)
-        return float(p_a_scores * p_b_scores)
+        """P(both teams score >= 1). Live-aware."""
+        if getattr(self, "live", False):
+            a_done = self.score_a >= 1
+            b_done = self.score_b >= 1
+            if a_done and b_done:
+                return 1.0
+            p_a = 1.0 if a_done else float(1 - poisson.pmf(0, self.mu_goals_a))
+            p_b = 1.0 if b_done else float(1 - poisson.pmf(0, self.mu_goals_b))
+            return p_a * p_b
+        return float((1 - poisson.pmf(0, self.mu_goals_a)) *
+                     (1 - poisson.pmf(0, self.mu_goals_b)))
+
+    def p_ge(self, stat: str, side: str, n: int, half: str = "full") -> float:
+        """P(stat_side >= n). Live-aware for full-match goals."""
+        if getattr(self, "live", False) and stat == "goals" and half == "full":
+            current = self.score_a if side == "a" else self.score_b
+            if current >= n:
+                return 1.0
+            n = n - current
+        lam = self.mu(stat, side, half)
+        return float(1 - poisson.cdf(n - 1, lam))
+
+    def p_total_ge(self, stat: str, n: int, half: str = "full") -> float:
+        """P(stat_a + stat_b >= n). Live-aware for full-match goals."""
+        if getattr(self, "live", False) and stat == "goals" and half == "full":
+            current = self.score_a + self.score_b
+            if current >= n:
+                return 1.0
+            n = n - current
+        lam = self.mu(stat, "a", half) + self.mu(stat, "b", half)
+        return float(1 - poisson.cdf(n - 1, lam))
 
     def p_btts_and_goals_ge(self, n: int) -> float:
         """P(both teams score AND total goals >= n)."""

@@ -17,34 +17,29 @@ from .api_client import SportsPredictClient, EVENT_ID
 from .team_data import name_to_code, get_stats
 from .models import MatchModel
 from .market_solver import solve
+from .live_scores import get_live_states
 
 API_KEY = "sp_live_d8b6fec43ffe8ae49b0c3af62076eb3a04365ff78736ee3463aa4ee6bf027321"
 
 
 def parse_match_name(name: str) -> tuple[str, str]:
-    """
-    Convert 'IRQ vs NOR' → ('IRQ', 'NOR').
-    Handles both 3-letter codes and full names.
-    """
+    """Convert 'IRQ vs NOR' → ('IRQ', 'NOR')."""
     parts = [p.strip() for p in name.split(" vs ")]
     if len(parts) != 2:
         raise ValueError(f"Unexpected match name format: {name!r}")
 
     def resolve(part: str) -> str:
-        # Try direct code lookup first
         from .team_data import TEAM_STATS
         if part in TEAM_STATS:
             return part
         code = name_to_code(part)
-        if code:
-            return code
-        # Return as-is (unknown team — will use DEFAULT_STATS)
-        return part
+        return code if code else part
 
     return resolve(parts[0]), resolve(parts[1])
 
 
-def process_match(client: SportsPredictClient, match: dict, dry_run: bool) -> int:
+def process_match(client: SportsPredictClient, match: dict,
+                  dry_run: bool, live_states: dict) -> int:
     """Predict and optionally submit all open markets for a match. Returns # submitted."""
     match_id   = match["id"]
     match_name = match["name"]
@@ -58,6 +53,16 @@ def process_match(client: SportsPredictClient, match: dict, dry_run: bool) -> in
     stats_a = get_stats(team_a)
     stats_b = get_stats(team_b)
     model   = MatchModel(stats_a, stats_b, team_a, team_b)
+
+    # Apply live score if match is currently in play
+    live_key = frozenset([team_a, team_b])
+    state = live_states.get(live_key)
+    if state and state["in_play"]:
+        score_a = state["scores"].get(team_a, 0)
+        score_b = state["scores"].get(team_b, 0)
+        minute  = state["minute"]
+        model.apply_live(score_a, score_b, minute)
+        print(f"  [LIVE] {team_a} {score_a}-{score_b} {team_b}  ({minute}')")
 
     markets = client.list_markets(match_id)
     if not markets:
@@ -88,7 +93,6 @@ def process_match(client: SportsPredictClient, match: dict, dry_run: bool) -> in
         return len(predictions)
     except Exception as e:
         print(f"  [ERROR] Batch submit failed: {e}")
-        # Fallback: submit one by one
         submitted = 0
         for p in predictions:
             try:
@@ -110,8 +114,13 @@ def main():
     client = SportsPredictClient(API_KEY)
     now    = datetime.now(timezone.utc)
 
-    print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches for event {EVENT_ID}…")
-    matches = client.list_matches(EVENT_ID)
+    print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches and live scores…")
+    matches     = client.list_matches(EVENT_ID)
+    live_states = get_live_states()
+
+    if live_states:
+        print(f"Live matches detected: {len(live_states)}")
+
     print(f"Found {len(matches)} total matches with open markets")
 
     if args.match_id:
@@ -127,7 +136,7 @@ def main():
         print(f"  {match['name']}  (opens {opening.strftime('%b %d %H:%M UTC')}, "
               f"{match['open_market_count']} markets)")
 
-        submitted = process_match(client, match, args.dry_run)
+        submitted = process_match(client, match, args.dry_run, live_states)
         total_submitted += submitted
 
     print(f"\n{'='*60}")
