@@ -18,6 +18,7 @@ from .team_data import name_to_code, get_stats
 from .models import MatchModel
 from .market_solver import solve
 from .live_scores import get_live_states
+from .bayesian_updater import get_dynamic_stats
 
 API_KEY = "sp_live_d8b6fec43ffe8ae49b0c3af62076eb3a04365ff78736ee3463aa4ee6bf027321"
 
@@ -39,7 +40,7 @@ def parse_match_name(name: str) -> tuple[str, str]:
 
 
 def process_match(client: SportsPredictClient, match: dict,
-                  dry_run: bool, live_states: dict) -> int:
+                  dry_run: bool, live_states: dict, dynamic_stats: dict) -> int:
     """Predict and optionally submit all open markets for a match. Returns # submitted."""
     match_id   = match["id"]
     match_name = match["name"]
@@ -50,8 +51,8 @@ def process_match(client: SportsPredictClient, match: dict,
         print(f"  [SKIP] {e}")
         return 0
 
-    stats_a = get_stats(team_a)
-    stats_b = get_stats(team_b)
+    stats_a = dynamic_stats.get(team_a) or get_stats(team_a)
+    stats_b = dynamic_stats.get(team_b) or get_stats(team_b)
     model   = MatchModel(stats_a, stats_b, team_a, team_b)
 
     # Apply live score if match is currently in play
@@ -114,13 +115,14 @@ def main():
     client = SportsPredictClient(API_KEY)
     now    = datetime.now(timezone.utc)
 
-    print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches and live scores…")
+    print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches, live scores, and completed results…")
     matches     = client.list_matches(EVENT_ID)
     live_states = get_live_states()
+    dynamic_stats, n_results = get_dynamic_stats()
 
     if live_states:
         print(f"Live matches detected: {len(live_states)}")
-
+    print(f"Bayesian model updated from {n_results} completed WC matches")
     print(f"Found {len(matches)} total matches with open markets")
 
     if args.match_id:
@@ -136,7 +138,7 @@ def main():
         print(f"  {match['name']}  (opens {opening.strftime('%b %d %H:%M UTC')}, "
               f"{match['open_market_count']} markets)")
 
-        submitted = process_match(client, match, args.dry_run, live_states)
+        submitted = process_match(client, match, args.dry_run, live_states, dynamic_stats)
         total_submitted += submitted
 
     print(f"\n{'='*60}")
