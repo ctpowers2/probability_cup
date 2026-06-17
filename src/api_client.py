@@ -23,6 +23,9 @@ class SportsPredictClient:
         for attempt in range(_retries + 1):
             try:
                 resp = requests.post(MCP_URL, headers=self.headers, json=payload, timeout=45)
+                if resp.status_code == 429 and attempt < _retries:
+                    time.sleep(10 * (attempt + 1))   # 10s, 20s, 30s
+                    continue
                 if resp.status_code in (502, 503, 504) and attempt < _retries:
                     time.sleep(2 ** attempt)
                     continue

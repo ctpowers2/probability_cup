@@ -11,6 +11,7 @@ Flags:
 
 import argparse
 import sys
+import time
 from datetime import datetime, timezone
 
 from .api_client import SportsPredictClient, EVENT_ID
@@ -39,9 +40,15 @@ def parse_match_name(name: str) -> tuple[str, str]:
     return resolve(parts[0]), resolve(parts[1])
 
 
-def process_match(client: SportsPredictClient, match: dict,
-                  dry_run: bool, live_states: dict, dynamic_stats: dict) -> int:
-    """Predict and optionally submit all open markets for a match. Returns # submitted."""
+def process_match(client: SportsPredictClient, match: dict, dry_run: bool,
+                  live_states: dict, dynamic_stats: dict,
+                  existing: dict[str, dict]) -> int:
+    """
+    Predict and submit/update all open markets for a match.
+
+    existing: {market_id: {"id": prediction_id, "probability": int}}
+    Returns number of predictions created or updated.
+    """
     match_id   = match["id"]
     match_name = match["name"]
 
@@ -70,38 +77,56 @@ def process_match(client: SportsPredictClient, match: dict,
         print(f"  No open markets for {match_name}")
         return 0
 
-    predictions: list[dict] = []
+    to_submit: list[dict] = []   # new markets (no prior prediction)
+    to_update: list[dict] = []   # existing predictions that changed
+
     for mkt in markets:
         mkt_id   = mkt["id"]
         question = mkt["question"]
-        prob     = solve(question, team_a, team_b, model)
-        predictions.append({"market_id": mkt_id, "probability": prob})
-        print(f"    {prob:3d}%  {question}")
+        new_prob = solve(question, team_a, team_b, model)
+
+        if mkt_id in existing:
+            old_prob = existing[mkt_id]["probability"]
+            tag = "=" if new_prob == old_prob else f"{old_prob}%→"
+            print(f"    {new_prob:3d}%  [{tag}]  {question}")
+            if new_prob != old_prob:
+                to_update.append({"pred_id": existing[mkt_id]["id"], "probability": new_prob})
+        else:
+            print(f"    {new_prob:3d}%  [NEW]  {question}")
+            to_submit.append({"market_id": mkt_id, "probability": new_prob})
 
     if dry_run:
-        print(f"  [DRY RUN] Would submit {len(predictions)} predictions for {match_name}")
+        print(f"  [DRY RUN] {len(to_submit)} new, {len(to_update)} updates for {match_name}")
         return 0
 
-    try:
-        result = client.submit_predictions_batch(predictions)
-        if isinstance(result, list):
-            fail_msgs = [r.get("message") or r.get("error") for r in result
-                         if isinstance(r, dict) and
-                         not (r.get("success") or r.get("type") == "prediction")]
-            if fail_msgs:
-                print(f"  [WARN] {len(fail_msgs)} failures: {set(fail_msgs)}")
-        print(f"  [OK] Submitted {len(predictions)} predictions for {match_name}")
-        return len(predictions)
-    except Exception as e:
-        print(f"  [ERROR] Batch submit failed: {e}")
-        submitted = 0
-        for p in predictions:
-            try:
-                client.submit_prediction(p["market_id"], p["probability"])
-                submitted += 1
-            except Exception as e2:
-                print(f"    [SKIP] {p['market_id']}: {e2}")
-        return submitted
+    submitted = 0
+
+    # Batch-submit new predictions
+    if to_submit:
+        try:
+            client.submit_predictions_batch(to_submit)
+            submitted += len(to_submit)
+        except Exception as e:
+            print(f"  [ERROR] Batch submit failed: {e}")
+            for p in to_submit:
+                try:
+                    client.submit_prediction(p["market_id"], p["probability"])
+                    submitted += 1
+                except Exception as e2:
+                    print(f"    [SKIP] {p['market_id']}: {e2}")
+
+    # Update changed predictions individually (small delay to avoid rate limiting)
+    for p in to_update:
+        try:
+            client.update_prediction(p["pred_id"], p["probability"])
+            submitted += 1
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"    [SKIP UPDATE] {p['pred_id']}: {e}")
+
+    label = f"{len(to_submit)} new, {len(to_update)} updated"
+    print(f"  [OK] {label} for {match_name}")
+    return submitted
 
 
 def main():
@@ -116,14 +141,22 @@ def main():
     now    = datetime.now(timezone.utc)
 
     print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches, live scores, and completed results…")
-    matches     = client.list_matches(EVENT_ID)
-    live_states = get_live_states()
+    matches        = client.list_matches(EVENT_ID)
+    live_states    = get_live_states()
     dynamic_stats, n_results = get_dynamic_stats()
+
+    # Build market_id → {id, probability} from all existing predictions
+    all_preds = client.list_predictions() or []
+    existing: dict[str, dict] = {
+        p["market_id"]: {"id": p["id"], "probability": p["probability"]}
+        for p in all_preds
+        if p.get("market_status") == "open"
+    }
 
     if live_states:
         print(f"Live matches detected: {len(live_states)}")
     print(f"Bayesian model updated from {n_results} completed WC matches")
-    print(f"Found {len(matches)} total matches with open markets")
+    print(f"Found {len(matches)} matches | {len(existing)} existing open predictions")
 
     if args.match_id:
         matches = [m for m in matches if m["id"] == args.match_id]
@@ -131,7 +164,7 @@ def main():
             print(f"Match ID {args.match_id!r} not found or has no open markets.")
             sys.exit(1)
 
-    total_submitted = 0
+    total = 0
     for match in matches:
         opening = datetime.fromisoformat(match["opening_time"].replace("Z", "+00:00"))
         print(f"\n{'='*60}")
@@ -139,8 +172,8 @@ def main():
               f"{match['open_market_count']} markets)")
 
         try:
-            submitted = process_match(client, match, args.dry_run, live_states, dynamic_stats)
-            total_submitted += submitted
+            total += process_match(client, match, args.dry_run,
+                                   live_states, dynamic_stats, existing)
         except Exception as e:
             print(f"  [ERROR] {match['name']}: {e}")
 
@@ -148,7 +181,7 @@ def main():
     if args.dry_run:
         print("DRY RUN complete — no predictions submitted.")
     else:
-        print(f"Done. Submitted {total_submitted} predictions across {len(matches)} matches.")
+        print(f"Done. {total} predictions created/updated across {len(matches)} matches.")
 
 
 if __name__ == "__main__":
