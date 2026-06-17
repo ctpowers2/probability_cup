@@ -138,8 +138,11 @@ def main():
         print(f"  {match['name']}  (opens {opening.strftime('%b %d %H:%M UTC')}, "
               f"{match['open_market_count']} markets)")
 
-        submitted = process_match(client, match, args.dry_run, live_states, dynamic_stats)
-        total_submitted += submitted
+        try:
+            submitted = process_match(client, match, args.dry_run, live_states, dynamic_stats)
+            total_submitted += submitted
+        except Exception as e:
+            print(f"  [ERROR] {match['name']}: {e}")
 
     print(f"\n{'='*60}")
     if args.dry_run:

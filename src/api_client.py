@@ -1,4 +1,5 @@
 import json
+import time
 import requests
 
 MCP_URL = "https://api.sportspredict.com/api/v1/mcp"
@@ -16,18 +17,28 @@ class SportsPredictClient:
         }
         self._req_id = 0
 
-    def _call(self, method: str, params: dict):
+    def _call(self, method: str, params: dict, _retries: int = 3):
         self._req_id += 1
         payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": self._req_id}
-        resp = requests.post(MCP_URL, headers=self.headers, json=payload, timeout=30)
-        resp.raise_for_status()
-        for line in resp.content.decode("utf-8").splitlines():
-            if line.startswith("data: "):
-                data = json.loads(line[6:])
-                if "error" in data:
-                    raise RuntimeError(f"MCP error: {data['error']}")
-                return data.get("result")
-        raise RuntimeError(f"No data in MCP response: {resp.text[:200]}")
+        for attempt in range(_retries + 1):
+            try:
+                resp = requests.post(MCP_URL, headers=self.headers, json=payload, timeout=45)
+                if resp.status_code in (502, 503, 504) and attempt < _retries:
+                    time.sleep(2 ** attempt)
+                    continue
+                resp.raise_for_status()
+                for line in resp.content.decode("utf-8").splitlines():
+                    if line.startswith("data: "):
+                        data = json.loads(line[6:])
+                        if "error" in data:
+                            raise RuntimeError(f"MCP error: {data['error']}")
+                        return data.get("result")
+                raise RuntimeError(f"No data in MCP response: {resp.text[:200]}")
+            except requests.exceptions.ConnectionError:
+                if attempt < _retries:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
 
     def _tool(self, name: str, arguments: dict):
         result = self._call("tools/call", {"name": name, "arguments": arguments})
