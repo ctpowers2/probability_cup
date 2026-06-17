@@ -75,13 +75,13 @@ class MatchModel:
             a["sot"], a["sot_against"], b["sot"], b["sot_against"], LEAGUE["sot"]
         )
 
-        # Fouls (independent — no head-to-head interaction)
-        self.mu_fouls_a = a["fouls"]
-        self.mu_fouls_b = b["fouls"]
+        # Fouls (DC-style: teams foul more against stronger attackers)
+        self.mu_fouls_a = a["fouls"] * b["attack"] / LEAGUE["goals"]
+        self.mu_fouls_b = b["fouls"] * a["attack"] / LEAGUE["goals"]
 
-        # Offsides (independent)
-        self.mu_offsides_a = a["offsides"]
-        self.mu_offsides_b = b["offsides"]
+        # Offsides (DC-style: caught offside more vs aggressive pressing opponents)
+        self.mu_offsides_a = a["offsides"] * b["attack"] / LEAGUE["goals"]
+        self.mu_offsides_b = b["offsides"] * a["attack"] / LEAGUE["goals"]
 
         # Corners (independent)
         self.mu_corners_a = a["corners"]

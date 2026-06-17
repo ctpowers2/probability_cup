@@ -27,7 +27,7 @@ Supported question patterns (all from observed World Cup 2026 markets):
 """
 
 import re
-from .models import MatchModel, prob_a_gt_b
+from .models import MatchModel, prob_a_gt_b, LEAGUE
 from .team_data import CODE_TO_NAME, get_stats
 from .player_data import DEFAULT_PLAYER, get_player_stats
 
@@ -300,7 +300,15 @@ def solve(question: str, team_a_code: str, team_b_code: str, model: MatchModel) 
         _, pstats = _extract_player_name(q)
         half = "h2" if "second half" in ql else "full"
         stats = pstats or DEFAULT_PLAYER
-        return to_int_prob(model.p_player_sot(stats["sot_per_game"], half))
+        player_team = (pstats or {}).get("team", "")
+        if player_team == model.a_code:
+            opp_sot_against = model.b["sot_against"]
+        elif player_team == model.b_code:
+            opp_sot_against = model.a["sot_against"]
+        else:
+            opp_sot_against = LEAGUE["sot"]
+        adj_sot = stats["sot_per_game"] * (opp_sot_against / LEAGUE["sot"])
+        return to_int_prob(model.p_player_sot(adj_sot, half))
 
     # ---------------------------------------------------------------- #
     # 19. Player: score a goal (excluding own goals)                    #
