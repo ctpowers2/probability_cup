@@ -77,22 +77,18 @@ def process_match(client: SportsPredictClient, match: dict, dry_run: bool,
         print(f"  No open markets for {match_name}")
         return 0
 
-    to_submit: list[dict] = []   # new markets (no prior prediction)
-    to_update: list[dict] = []   # existing predictions that changed
+    to_submit: list[dict] = []
+    to_update: list[dict] = []
 
     for mkt in markets:
         mkt_id   = mkt["id"]
         question = mkt["question"]
         new_prob = solve(question, team_a, team_b, model)
+        print(f"    {new_prob:3d}%  {question}")
 
         if mkt_id in existing:
-            old_prob = existing[mkt_id]["probability"]
-            tag = "=" if new_prob == old_prob else f"{old_prob}%→"
-            print(f"    {new_prob:3d}%  [{tag}]  {question}")
-            if new_prob != old_prob:
-                to_update.append({"pred_id": existing[mkt_id]["id"], "probability": new_prob})
+            to_update.append({"pred_id": existing[mkt_id]["id"], "probability": new_prob})
         else:
-            print(f"    {new_prob:3d}%  [NEW]  {question}")
             to_submit.append({"market_id": mkt_id, "probability": new_prob})
 
     if dry_run:
@@ -150,7 +146,6 @@ def main():
     existing: dict[str, dict] = {
         p["market_id"]: {"id": p["id"], "probability": p["probability"]}
         for p in all_preds
-        if p.get("market_status") == "open"
     }
 
     if live_states:
