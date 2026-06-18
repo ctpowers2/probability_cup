@@ -23,6 +23,11 @@ LEAGUE = {
 BASE_RED_CARD_RATE   = 0.06
 BASE_PENALTY_RATE    = 0.30
 
+# WC tournament play is more conservative — fewer offsides than league priors.
+# Calibrated from WC 2026 observed data (3/3 high-confidence offside predictions
+# were too high before this correction).
+WC_OFFSIDES_SCALE = 0.60
+
 # Half-time proportion of full-game stats
 H1_FRAC = {"goals": 0.45, "sot": 0.48, "corners": 0.48, "fouls": 0.50, "offsides": 0.50, "yellows": 0.50}
 H2_FRAC = {k: 1.0 - v for k, v in H1_FRAC.items()}
@@ -48,14 +53,17 @@ class MatchModel:
     """
     Full statistical model for a single match.
     team_a_stats / team_b_stats: dicts from team_data.TEAM_STATS
+    wc_goals_scale: observed WC goals per team / league prior (default 1.0)
     """
 
     def __init__(self, team_a_stats: dict, team_b_stats: dict,
-                 team_a_code: str = "", team_b_code: str = ""):
+                 team_a_code: str = "", team_b_code: str = "",
+                 wc_goals_scale: float = 1.0):
         self.a = team_a_stats
         self.b = team_b_stats
         self.a_code = team_a_code
         self.b_code = team_b_code
+        self.wc_goals_scale = wc_goals_scale
         self._build()
 
     # ------------------------------------------------------------------ #
@@ -65,23 +73,27 @@ class MatchModel:
     def _build(self):
         a, b = self.a, self.b
 
-        # Goals (main Poisson means)
-        self.mu_goals_a, self.mu_goals_b = _dc_expected(
+        # Goals (main Poisson means), scaled to observed WC goals rate
+        raw_goals_a, raw_goals_b = _dc_expected(
             a["attack"], a["defense"], b["attack"], b["defense"], LEAGUE["goals"]
         )
+        self.mu_goals_a = raw_goals_a * self.wc_goals_scale
+        self.mu_goals_b = raw_goals_b * self.wc_goals_scale
 
         # Shots on target
         self.mu_sot_a, self.mu_sot_b = _dc_expected(
             a["sot"], a["sot_against"], b["sot"], b["sot_against"], LEAGUE["sot"]
         )
 
-        # Fouls (DC-style: teams foul more against stronger attackers)
-        self.mu_fouls_a = a["fouls"] * b["attack"] / LEAGUE["goals"]
-        self.mu_fouls_b = b["fouls"] * a["attack"] / LEAGUE["goals"]
+        # Fouls — independent (DC adjustment hurt performance: game-state effects
+        # dominate and DC overcorrects when opponent attack is far from average)
+        self.mu_fouls_a = a["fouls"]
+        self.mu_fouls_b = b["fouls"]
 
-        # Offsides (DC-style: caught offside more vs aggressive pressing opponents)
-        self.mu_offsides_a = a["offsides"] * b["attack"] / LEAGUE["goals"]
-        self.mu_offsides_b = b["offsides"] * a["attack"] / LEAGUE["goals"]
+        # Offsides — DC-style but scaled down for WC tournament play.
+        # WC teams run more conservative lines → fewer offsides than league priors.
+        self.mu_offsides_a = a["offsides"] * b["attack"] / LEAGUE["goals"] * WC_OFFSIDES_SCALE
+        self.mu_offsides_b = b["offsides"] * a["attack"] / LEAGUE["goals"] * WC_OFFSIDES_SCALE
 
         # Corners (independent)
         self.mu_corners_a = a["corners"]

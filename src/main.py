@@ -42,7 +42,7 @@ def parse_match_name(name: str) -> tuple[str, str]:
 
 def process_match(client: SportsPredictClient, match: dict, dry_run: bool,
                   live_states: dict, dynamic_stats: dict,
-                  existing: dict[str, dict]) -> int:
+                  existing: dict[str, dict], wc_goals_scale: float = 1.0) -> int:
     """
     Predict and submit/update all open markets for a match.
 
@@ -60,7 +60,7 @@ def process_match(client: SportsPredictClient, match: dict, dry_run: bool,
 
     stats_a = dynamic_stats.get(team_a) or get_stats(team_a)
     stats_b = dynamic_stats.get(team_b) or get_stats(team_b)
-    model   = MatchModel(stats_a, stats_b, team_a, team_b)
+    model   = MatchModel(stats_a, stats_b, team_a, team_b, wc_goals_scale)
 
     # Apply live score if match is currently in play
     live_key = frozenset([team_a, team_b])
@@ -139,7 +139,7 @@ def main():
     print(f"[{now.strftime('%Y-%m-%d %H:%M UTC')}] Fetching matches, live scores, and completed results…")
     matches        = client.list_matches(EVENT_ID)
     live_states    = get_live_states()
-    dynamic_stats, n_results = get_dynamic_stats()
+    dynamic_stats, n_results, wc_goals_scale = get_dynamic_stats()
 
     # Build market_id → {id, probability} from all existing predictions
     all_preds = client.list_predictions() or []
@@ -150,7 +150,8 @@ def main():
 
     if live_states:
         print(f"Live matches detected: {len(live_states)}")
-    print(f"Bayesian model updated from {n_results} completed WC matches")
+    print(f"Bayesian model updated from {n_results} completed WC matches  "
+          f"(goals scale={wc_goals_scale:.3f})")
     print(f"Found {len(matches)} matches | {len(existing)} existing open predictions")
 
     if args.match_id:
@@ -168,7 +169,7 @@ def main():
 
         try:
             total += process_match(client, match, args.dry_run,
-                                   live_states, dynamic_stats, existing)
+                                   live_states, dynamic_stats, existing, wc_goals_scale)
         except Exception as e:
             print(f"  [ERROR] {match['name']}: {e}")
 

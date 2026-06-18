@@ -165,14 +165,20 @@ def compute_updated_stats(
 # Public entry point                                                   #
 # ------------------------------------------------------------------ #
 
-def get_dynamic_stats() -> tuple[dict, int]:
+def get_dynamic_stats() -> tuple[dict, int, float]:
     """
-    Fetch completed WC results, run Bayesian EM, return (updated_stats, n_games).
-    Falls back to static TEAM_STATS if fetch fails.
+    Fetch completed WC results, run Bayesian EM.
+    Returns (updated_stats, n_games, wc_goals_scale).
+
+    wc_goals_scale = observed WC goals per team per game / LEAGUE_GOALS prior.
+    Starts at 1.0 with no data; converges to the true WC scoring rate.
     """
     results = get_completed_results()
     n = len(results)
     if n == 0:
-        return dict(TEAM_STATS), 0
+        return dict(TEAM_STATS), 0, 1.0
+    total_goals = sum(g["goals_a"] + g["goals_b"] for g in results)
+    wc_goals_per_team = total_goals / (2 * n)
+    wc_goals_scale = wc_goals_per_team / LEAGUE_GOALS
     updated = compute_updated_stats(results)
-    return updated, n
+    return updated, n, wc_goals_scale
