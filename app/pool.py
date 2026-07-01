@@ -20,6 +20,7 @@ from src.team_data import get_stats, CODE_TO_NAME, TEAM_STATS, name_to_code
 from src.models import MatchModel
 from src.live_scores import get_live_states
 from src.bayesian_updater import get_dynamic_stats
+from src.kalshi import fetch_kalshi_odds
 
 DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
@@ -46,6 +47,20 @@ _SLATE_TTL = 300  # seconds — re-poll the live fixture list at most this often
 # --------------------------------------------------------------------------- #
 _STATS_TTL = 300  # refresh Bayesian+Elo update at most this often
 _stats_cache: dict = {"stats": None, "ts": 0.0}
+
+_KALSHI_TTL = 300
+_kalshi_cache: dict = {"odds": {}, "ts": 0.0}
+
+
+def _get_kalshi_odds() -> dict:
+    now = time.time()
+    if not _kalshi_cache["odds"] or (now - _kalshi_cache["ts"]) >= _KALSHI_TTL:
+        try:
+            _kalshi_cache["odds"] = fetch_kalshi_odds()
+        except Exception:
+            pass
+        _kalshi_cache["ts"] = now
+    return _kalshi_cache["odds"]
 
 
 def _get_stats(code: str) -> dict:
@@ -177,6 +192,15 @@ def team_name(code: str) -> str:
 def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
     """Assemble one match dict with locally-computed AI odds + rationale."""
     odds = ai_odds(code_a, code_b)
+    kalshi = _get_kalshi_odds().get(frozenset({code_a, code_b}))
+    crowd: dict | None = None
+    if kalshi:
+        # Kalshi entry stores code_a/code_b as the side that was bet on;
+        # re-orient so 'a'/'b' align with our match's code_a/code_b.
+        if kalshi.get("code_a") == code_a:
+            crowd = {"a": kalshi["a"], "b": kalshi["b"], "volume": kalshi["volume"]}
+        else:
+            crowd = {"a": kalshi["b"], "b": kalshi["a"], "volume": kalshi["volume"]}
     return {
         "id": mid,
         "team_a": code_a,
@@ -187,6 +211,7 @@ def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
         "ai": {k: round(v * 100, 1) for k, v in odds.items()},
         "ai_favorite": max(OUTCOMES, key=lambda o: odds[o]),
         "ai_rationale": rationale(code_a, code_b, odds),
+        "crowd": crowd,
     }
 
 
