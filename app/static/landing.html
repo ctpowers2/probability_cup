@@ -136,8 +136,9 @@
   .sec-lede { color: var(--muted); max-width: 42em; margin-top: 14px; font-size: 17px; }
 
   /* steps */
-  .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; margin-top: 48px; }
-  @media (max-width: 820px) { .steps { grid-template-columns: 1fr; } }
+  .steps { display: grid; grid-template-columns: repeat(4,1fr); gap: 22px; margin-top: 48px; }
+  @media (max-width: 1020px) { .steps { grid-template-columns: repeat(2,1fr); } }
+  @media (max-width: 540px) { .steps { grid-template-columns: 1fr; } }
   .step { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 26px; position: relative; }
   .step .num { font-family: var(--font-mono); font-size: 13px; color: var(--muted-dim); }
   .step h3 { font-size: 20px; margin: 14px 0 8px; }
@@ -244,7 +245,7 @@
     <div class="reveal in" style="transition-delay:.12s">
       <div class="live-card" id="heroCard">
         <div class="lc-top">
-          <span class="live-pill"><span class="d"></span> Live</span>
+          <span class="live-pill"><span class="d"></span> Live · Knockout</span>
           <span class="lc-clock" id="hcClock">62'</span>
         </div>
         <div class="lc-score">
@@ -252,20 +253,19 @@
           <span class="sc" id="hcScore">1 – 0</span>
           <span class="tn">Brazil</span>
         </div>
-        <div class="lc-note">🤖 AI win probability — updating live</div>
+        <div class="lc-note">🤖 AI win probability — no draws in knockout</div>
         <div class="oddsbar">
-          <div class="seg-a" id="segA" style="width:68%"></div>
-          <div class="seg-draw" id="segD" style="width:23%"></div>
-          <div class="seg-b" id="segB" style="width:9%"></div>
+          <div class="seg-a" id="segA" style="width:78%"></div>
+          <div class="seg-b" id="segB" style="width:22%"></div>
         </div>
         <div class="oddslabels">
-          <span><b id="pA">68%</b> Argentina</span>
-          <span><b id="pD">23%</b> Draw</span>
-          <span>Brazil <b id="pB">9%</b></span>
+          <span><b id="pA">78%</b> Argentina</span>
+          <span>Brazil <b id="pB">22%</b></span>
         </div>
         <div class="lc-rationale" id="hcWhy">
-          💡 Argentina 68% — a 138-point Elo edge and now a goal ahead; projected 1.6–0.8.
+          💡 Argentina 78% — a goal up at 62', strong shootout record (0.68); projected 1.6–0.8.
         </div>
+        <div id="hcProj" style="display:none;margin-top:14px; padding:10px 12px; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.2); border-radius:10px; font-size:12.5px; color:var(--cyan)"></div>
       </div>
     </div>
   </div>
@@ -282,20 +282,26 @@
       <div class="step reveal">
         <div class="num">STEP 01</div>
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-linecap="round"/></svg></div>
-        <h3>Make your picks</h3>
-        <p>Call the winner of every fixture — favorite, underdog, or a gutsy draw. Change your mind any time before kickoff.</p>
+        <h3>Pick a winner</h3>
+        <p>Knockout mode — no draws. Choose which team advances for every fixture. Change your pick any time before kickoff.</p>
       </div>
-      <div class="step reveal" style="transition-delay:.1s">
+      <div class="step reveal" style="transition-delay:.08s">
         <div class="num">STEP 02</div>
-        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 3v18h18" stroke="currentColor" stroke-linecap="round"/><path d="M7 14l4-4 3 3 5-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <h3>The AI posts its odds</h3>
-        <p>A Dixon-Coles Poisson model rates all 48 teams and prices every match — then explains its reasoning in plain English.</p>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-linecap="round"/></svg></div>
+        <h3>Set your confidence</h3>
+        <p>Drag the slider from 51% to 99%. High confidence pays more if you're right — and costs more if you're wrong.</p>
       </div>
-      <div class="step reveal" style="transition-delay:.2s">
+      <div class="step reveal" style="transition-delay:.16s">
         <div class="num">STEP 03</div>
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 3v18h18" stroke="currentColor" stroke-linecap="round"/><path d="M7 14l4-4 3 3 5-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Watch it live</h3>
+        <p>As goals go in, the AI reprices in real time. A projected score line tells you exactly what you'd earn if the current scoreline holds.</p>
+      </div>
+      <div class="step reveal" style="transition-delay:.24s">
+        <div class="num">STEP 04</div>
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M8 21h8M12 17v4M6 4h12v5a6 6 0 0 1-12 0V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 5h2a2 2 0 0 1-2 4M6 5H4a2 2 0 0 0 2 4" stroke="currentColor" stroke-linecap="round"/></svg></div>
-        <h3>Beat the Brier score</h3>
-        <p>You and the model are graded on the same metric as results land. Lower score wins. Climb the board, humiliate the AI.</p>
+        <h3>Beat the AI</h3>
+        <p>Both you and the model are scored 0–100. The AI hedges with full probability distributions — outsmart it and claim the top spot.</p>
       </div>
     </div>
   </div>
@@ -327,7 +333,7 @@
       <div class="card wide reveal" style="transition-delay:.08s">
         <div class="ic"><svg viewBox="0 0 24 24" stroke-width="1.7"><path d="M3 3v18h18" stroke="currentColor" stroke-linecap="round"/><rect x="7" y="12" width="3" height="6" stroke="currentColor"/><rect x="12" y="8" width="3" height="10" stroke="currentColor"/><rect x="17" y="5" width="3" height="13" stroke="currentColor"/></svg></div>
         <h3>Humans vs. the machine</h3>
-        <p>One leaderboard, one metric. You commit to a pick; the AI hedges with probabilities. The Brier score keeps everyone honest — and settles the argument.</p>
+        <p>One leaderboard, one metric. Set your confidence on each pick — higher confidence means bigger rewards and bigger risks. The AI posts full probability distributions; outsmart it to claim the top spot.</p>
       </div>
     </div>
   </div>
@@ -338,17 +344,17 @@
     <div class="reveal">
       <div class="eyebrow">The scoreboard</div>
       <h2 class="sec">Can you finish above the AI?</h2>
-      <p class="sec-lede">Lower Brier score is sharper. The model is tough to beat — but it hedges, and you don't have to.</p>
+      <p class="sec-lede">Scored 0–100 — higher is sharper. The model is tough to beat, but a well-placed confident call can leapfrog it in one match.</p>
     </div>
     <div class="board reveal">
       <table>
-        <thead><tr><th>#</th><th>Player</th><th class="num">Avg Brier ↓</th><th class="num">Correct</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th class="num">Score ↑</th><th class="num">Correct</th></tr></thead>
         <tbody>
-          <tr class="you"><td class="rank">1</td><td>chase</td><td class="num">0.174</td><td class="num">7/8</td></tr>
-          <tr class="ai"><td class="rank">2</td><td>🤖 The AI</td><td class="num">0.198</td><td class="num">7/8</td></tr>
-          <tr><td class="rank">3</td><td>mateo</td><td class="num">0.235</td><td class="num">6/8</td></tr>
-          <tr><td class="rank">4</td><td>priya</td><td class="num">0.310</td><td class="num">6/8</td></tr>
-          <tr><td class="rank">5</td><td>sam</td><td class="num">0.488</td><td class="num">5/8</td></tr>
+          <tr class="you"><td class="rank">1</td><td>chase</td><td class="num">91</td><td class="num">7/8</td></tr>
+          <tr class="ai"><td class="rank">2</td><td>🤖 The AI</td><td class="num">87</td><td class="num">7/8</td></tr>
+          <tr><td class="rank">3</td><td>mateo</td><td class="num">82</td><td class="num">6/8</td></tr>
+          <tr><td class="rank">4</td><td>priya</td><td class="num">74</td><td class="num">6/8</td></tr>
+          <tr><td class="rank">5</td><td>sam</td><td class="num">58</td><td class="num">5/8</td></tr>
         </tbody>
       </table>
     </div>
@@ -391,13 +397,13 @@
     document.querySelectorAll(".reveal:not(.in)").forEach(el => io.observe(el));
   }
 
-  // Animated hero odds — a short looped "live match" so the bar visibly moves
+  // Animated hero odds — knockout (no draws), with projected score line
   if (!reduce) {
     const frames = [
-      { min: 45, score: "0 – 0", a: 52, d: 27, b: 21, why: "💡 Argentina 52% — a 138-point Elo edge; projected 1.6–0.9." },
-      { min: 58, score: "1 – 0", a: 71, d: 21, b: 8,  why: "💡 Argentina 71% — a goal up with 30' left; projected 1.7–0.7." },
-      { min: 76, score: "1 – 1", a: 44, d: 33, b: 23, why: "💡 Level at 76' — momentum shifts, draw now live at 33%." },
-      { min: 88, score: "2 – 1", a: 89, d: 9,  b: 2,  why: "💡 Argentina 89% — late winner, game all but sealed." },
+      { min: 45, score: "0 – 0", a: 55, b: 45, why: "💡 Argentina 55% — a 138-point Elo edge; projected 1.6–0.9.", proj: null },
+      { min: 58, score: "1 – 0", a: 78, b: 22, why: "💡 Argentina 78% — a goal up at 58', strong shootout record (0.68).", proj: "✓ If Argentina wins, chase earns 91 on this match" },
+      { min: 76, score: "1 – 1", a: 56, b: 44, why: "💡 Level at 76' — momentum reset, shootout edge still favors Argentina.", proj: null },
+      { min: 88, score: "2 – 1", a: 94, b: 6,  why: "💡 Argentina 94% — late winner, all but sealed with 2' left.", proj: "✓ If Argentina wins, chase earns 91 on this match" },
     ];
     let i = 0;
     const $ = id => document.getElementById(id);
@@ -405,9 +411,11 @@
       const f = frames[i % frames.length];
       $("hcClock").textContent = f.min + "'";
       $("hcScore").textContent = f.score;
-      $("segA").style.width = f.a + "%"; $("segD").style.width = f.d + "%"; $("segB").style.width = f.b + "%";
-      $("pA").textContent = f.a + "%"; $("pD").textContent = f.d + "%"; $("pB").textContent = f.b + "%";
+      $("segA").style.width = f.a + "%"; $("segB").style.width = f.b + "%";
+      $("pA").textContent = f.a + "%"; $("pB").textContent = f.b + "%";
       $("hcWhy").textContent = f.why;
+      const projEl = $("hcProj");
+      if (projEl) { projEl.textContent = f.proj || ""; projEl.style.display = f.proj ? "block" : "none"; }
       i++;
     };
     tick();
