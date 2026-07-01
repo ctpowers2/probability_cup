@@ -21,6 +21,15 @@ app = FastAPI(title="Probability Cup — Beat the AI")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+_NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+
+
+@app.on_event("startup")
+def _warm_caches():
+    """Kick off background fetches immediately so the first request isn't cold."""
+    pool._get_stats("ARG")          # triggers the Bayesian+Elo background thread
+    pool._get_bookmaker_odds()      # triggers the odds API background thread
+
 
 class PickIn(BaseModel):
     user: str
@@ -112,13 +121,13 @@ def api_sim_state():
 @app.get("/")
 def landing():
     """Marketing landing page — the front door."""
-    return FileResponse(STATIC_DIR / "landing.html")
+    return FileResponse(STATIC_DIR / "landing.html", headers=_NO_CACHE)
 
 
 @app.get("/play")
 def play():
     """The interactive prediction pool."""
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers=_NO_CACHE)
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")
