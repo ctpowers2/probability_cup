@@ -218,9 +218,9 @@ def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
     if bm:
         # Re-orient so 'a'/'b' align with our match's code_a/code_b.
         if bm.get("code_a") == code_a:
-            crowd = {"a": bm["a"], "b": bm["b"], "book": bm.get("book", "")}
+            crowd = {"a": bm["a"], "b": bm["b"], "book": bm.get("book", ""), "n_books": bm.get("n_books", 1)}
         else:
-            crowd = {"a": bm["b"], "b": bm["a"], "book": bm.get("book", "")}
+            crowd = {"a": bm["b"], "b": bm["a"], "book": bm.get("book", ""), "n_books": bm.get("n_books", 1)}
     return {
         "id": mid,
         "team_a": code_a,

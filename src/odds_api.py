@@ -69,10 +69,10 @@ def fetch_odds() -> dict[frozenset, dict]:
         if key in results:
             continue
 
-        # Walk bookmakers in priority order; take first with valid h2h prices
-        home_p: float | None = None
-        away_p: float | None = None
-        book_used = ""
+        # Collect vig-removed implied probs from ALL bookmakers, then average
+        home_samples: list[float] = []
+        away_samples: list[float] = []
+        books_used: list[str] = []
 
         for bm in event.get("bookmakers", []):
             for market in bm.get("markets", []):
@@ -82,24 +82,28 @@ def fetch_odds() -> dict[frozenset, dict]:
                 hp = prices.get(home_name)
                 ap = prices.get(away_name)
                 if hp and hp > 1.0 and ap and ap > 1.0:
-                    home_p = 1.0 / hp
-                    away_p = 1.0 / ap
-                    book_used = bm.get("key", "")
-                break
-            if home_p is not None:
+                    raw_h, raw_a = 1.0 / hp, 1.0 / ap
+                    total = raw_h + raw_a
+                    home_samples.append(raw_h / total)
+                    away_samples.append(raw_a / total)
+                    books_used.append(bm.get("key", ""))
                 break
 
-        if home_p is None or away_p is None:
+        if not home_samples:
             continue
 
-        # Remove vig by normalizing to 100%
-        total = home_p + away_p
+        avg_h = sum(home_samples) / len(home_samples)
+        avg_a = sum(away_samples) / len(away_samples)
+        # pick most recognisable book name for the label
+        book_label = next((b for b in _BOOKS if b in books_used), books_used[0])
+
         results[key] = {
-            "a": round(home_p / total * 100, 1),
-            "b": round(away_p / total * 100, 1),
+            "a": round(avg_h * 100, 1),
+            "b": round(avg_a * 100, 1),
             "code_a": code_home,
             "code_b": code_away,
-            "book": book_used,
+            "book": book_label,
+            "n_books": len(home_samples),
         }
 
     return results
