@@ -1,18 +1,18 @@
 """
 Generate a team-specific expert tip comparing AI vs bookmaker odds for a match.
 
-Uses Claude Haiku for speed and cost. Returns a short HTML string (plain text
-with optional <b> tags) explaining the discrepancy in terms of the actual
-team stats, Elo gap, and odds gap.
+Uses Groq (free tier) for fast, low-cost inference. Returns a short HTML string
+(plain text with optional <b> tags) explaining the discrepancy in terms of the
+actual team stats, Elo gap, and odds gap.
 
-Returns None if ANTHROPIC_API_KEY is not set or on any error.
+Returns None if GROQ_API_KEY is not set or on any error.
 """
 
 import os
 
 from .team_data import CODE_TO_NAME, DEFAULT_STATS, TEAM_STATS
 
-_MODEL = "claude-haiku-4-5-20251001"
+_MODEL = "llama-3.1-8b-instant"
 _MAX_TOKENS = 160
 
 
@@ -40,12 +40,12 @@ def generate_tip(
     ai_a/b     : AI win probabilities (0-100)
     pub_a/b    : bookmaker win probabilities (0-100), or None if unavailable
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
         return None
 
     try:
-        import anthropic
+        from groq import Groq
     except ImportError:
         return None
 
@@ -86,12 +86,12 @@ AI vs market gap on {name_a}: {ai_gap:+.1f}pp
 Write exactly 1-2 sentences (max 45 words) explaining what drives the AI's view and why it differs from (or agrees with) the market. Be specific about which stats matter most for this matchup. Use plain text with optional <b>team name</b> tags. No em-dashes."""
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
+        client = Groq(api_key=api_key)
+        msg = client.chat.completions.create(
             model=_MODEL,
             max_tokens=_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text.strip()
+        return msg.choices[0].message.content.strip()
     except Exception:
         return None
