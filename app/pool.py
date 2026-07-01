@@ -46,33 +46,56 @@ _SLATE_TTL = 300  # seconds — re-poll the live fixture list at most this often
 # Dynamic team stats cache                                                     #
 # --------------------------------------------------------------------------- #
 _STATS_TTL = 300  # refresh Bayesian+Elo update at most this often
-_stats_cache: dict = {"stats": None, "ts": 0.0}
+_stats_cache: dict = {"stats": dict(TEAM_STATS), "ts": 0.0}
+_stats_fetching = False
 
 _KALSHI_TTL = 300
 _kalshi_cache: dict = {"odds": {}, "ts": 0.0}
+_kalshi_fetching = False
+
+
+def _refresh_kalshi_bg() -> None:
+    """Fetch Kalshi odds in a background thread; never blocks the request cycle."""
+    global _kalshi_fetching
+    try:
+        odds = fetch_kalshi_odds()
+        _kalshi_cache["odds"] = odds
+    except Exception:
+        pass
+    finally:
+        _kalshi_cache["ts"] = time.time()
+        _kalshi_fetching = False
 
 
 def _get_kalshi_odds() -> dict:
+    global _kalshi_fetching
     now = time.time()
-    if not _kalshi_cache["odds"] or (now - _kalshi_cache["ts"]) >= _KALSHI_TTL:
-        try:
-            _kalshi_cache["odds"] = fetch_kalshi_odds()
-        except Exception:
-            pass
-        _kalshi_cache["ts"] = now
+    if (now - _kalshi_cache["ts"]) >= _KALSHI_TTL and not _kalshi_fetching:
+        _kalshi_fetching = True
+        threading.Thread(target=_refresh_kalshi_bg, daemon=True).start()
     return _kalshi_cache["odds"]
+
+
+def _refresh_stats_bg() -> None:
+    """Refresh Bayesian+Elo stats in a background thread."""
+    global _stats_fetching
+    try:
+        updated, _, _ = get_dynamic_stats()
+        _stats_cache["stats"] = updated
+    except Exception:
+        pass
+    finally:
+        _stats_cache["ts"] = time.time()
+        _stats_fetching = False
 
 
 def _get_stats(code: str) -> dict:
     """Return team stats, using Bayesian+Elo-updated values when available."""
+    global _stats_fetching
     now = time.time()
-    if _stats_cache["stats"] is None or (now - _stats_cache["ts"]) >= _STATS_TTL:
-        try:
-            updated, _, _ = get_dynamic_stats()
-            _stats_cache["stats"] = updated
-        except Exception:
-            _stats_cache["stats"] = _stats_cache["stats"] or dict(TEAM_STATS)
-        _stats_cache["ts"] = now
+    if (now - _stats_cache["ts"]) >= _STATS_TTL and not _stats_fetching:
+        _stats_fetching = True
+        threading.Thread(target=_refresh_stats_bg, daemon=True).start()
     return _stats_cache["stats"].get(code) or get_stats(code)
 
 
