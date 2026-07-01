@@ -639,12 +639,20 @@ function renderLivePanel(s) {
   panel.classList.add("on");
 
   const sim = s.mode === "sim";
-  const label = (s.finished ? "Full time" : (sim ? "Simulation" : "Live")) + (sim ? " · demo" : "");
+  const phase = s.phase || "reg";
+  const phaseLabel = phase === "et" ? "Extra Time" : phase === "pen" ? "Penalties" : "";
+  const statusLabel = s.finished
+    ? (phase === "pen" ? "Penalties — Final" : "Full time")
+    : (sim ? "Simulation · demo" : "Live");
+  const label = phaseLabel ? `${statusLabel} · ${phaseLabel}` : statusLabel;
+  const clockStr = phase === "pen" ? "PKs" : `${s.minute}'`;
   const note = sim
     ? "🤖 AI win probability — demo simulation, does not affect the leaderboard"
     : "🤖 AI win probability — real match, updating live";
   const goals = (s.goals || []).map(g => `<span class="goal-chip">⚽ ${g.minute}' ${g.team}</span>`).join("");
   const ticker = sim ? `<div class="live-ticker">${goals || '<span class="goal-chip">No goals yet</span>'}</div>` : "";
+  const penLine = (phase === "pen" && s.pen_summary)
+    ? `<div style="text-align:center;font-size:13px;color:var(--muted);margin-top:4px">${s.pen_summary}</div>` : "";
   const proj = projectedScoreLine(s);
   const footer = s.finished
     ? (sim ? `<div class="live-final" style="color:var(--muted-dim)">Simulation complete — not scored</div>`
@@ -656,13 +664,14 @@ function renderLivePanel(s) {
       <div class="live-head">
         <span class="live-dot"></span>
         <span class="live-label">${label}</span>
-        <span class="live-clock">${s.minute}'</span>
+        <span class="live-clock">${clockStr}</span>
       </div>
       <div class="live-score">
         <span class="tn">${s.name_a}</span>
         <span class="sc">${s.score_a} – ${s.score_b}</span>
         <span class="tn">${s.name_b}</span>
       </div>
+      ${penLine}
       <div class="live-odds-note">${note}</div>
       <div class="oddsbar">${oddsBar(s.ai)}</div>
       <div class="oddslabels">${oddsLabels(s)}</div>
