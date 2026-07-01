@@ -19,6 +19,7 @@ from src.api_client import SportsPredictClient, EVENT_ID
 from src.team_data import get_stats, CODE_TO_NAME, TEAM_STATS, name_to_code
 from src.models import MatchModel
 from src.live_scores import get_live_states
+from src.bayesian_updater import get_dynamic_stats
 
 DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
@@ -39,6 +40,25 @@ API_KEY = os.environ.get(
 )
 USE_LIVE = os.environ.get("PC_USE_LIVE", "1") != "0"
 _SLATE_TTL = 300  # seconds — re-poll the live fixture list at most this often
+
+# --------------------------------------------------------------------------- #
+# Dynamic team stats cache                                                     #
+# --------------------------------------------------------------------------- #
+_STATS_TTL = 300  # refresh Bayesian+Elo update at most this often
+_stats_cache: dict = {"stats": None, "ts": 0.0}
+
+
+def _get_stats(code: str) -> dict:
+    """Return team stats, using Bayesian+Elo-updated values when available."""
+    now = time.time()
+    if _stats_cache["stats"] is None or (now - _stats_cache["ts"]) >= _STATS_TTL:
+        try:
+            updated, _, _ = get_dynamic_stats()
+            _stats_cache["stats"] = updated
+        except Exception:
+            _stats_cache["stats"] = _stats_cache["stats"] or dict(TEAM_STATS)
+        _stats_cache["ts"] = now
+    return _stats_cache["stats"].get(code) or get_stats(code)
 
 
 # --------------------------------------------------------------------------- #
@@ -66,8 +86,8 @@ ET_DECISIVE = 0.5
 
 def shootout_edge(code_a: str, code_b: str) -> float:
     """P(A beats B in a shootout) from per-team shootout skill (Bradley–Terry)."""
-    sa = get_stats(code_a).get("so_skill", 0.5)
-    sb = get_stats(code_b).get("so_skill", 0.5)
+    sa = _get_stats(code_a).get("so_skill", 0.5)
+    sb = _get_stats(code_b).get("so_skill", 0.5)
     num = sa * (1 - sb)
     den = num + sb * (1 - sa)
     return num / den if den else 0.5
@@ -91,7 +111,7 @@ def ai_odds(code_a: str, code_b: str) -> dict:
     Knockout: two-way {a, b} — the draw mass is resolved in extra time (by
     strength) and penalties (by each team's shootout skill). Group: {a, draw, b}.
     """
-    model = MatchModel(get_stats(code_a), get_stats(code_b), code_a, code_b)
+    model = MatchModel(_get_stats(code_a), _get_stats(code_b), code_a, code_b)
     p_a = model.p_win("a")
     p_b = model.p_win("b")
     p_d = model.p_draw()
@@ -108,7 +128,7 @@ def rationale(code_a: str, code_b: str, odds: dict) -> str:
     A one-line, human-readable 'why' for the AI's odds, built from the same
     model internals that produced them. Explains the favorite in plain English.
     """
-    model = MatchModel(get_stats(code_a), get_stats(code_b), code_a, code_b)
+    model = MatchModel(_get_stats(code_a), _get_stats(code_b), code_a, code_b)
     fav = max(OUTCOMES, key=lambda o: odds[o])
 
     if fav == "draw":
@@ -121,7 +141,7 @@ def rationale(code_a: str, code_b: str, odds: dict) -> str:
     else:
         fav_c, dog_c, mu_f, mu_d = code_b, code_a, model.mu_goals_b, model.mu_goals_a
 
-    fav_s, dog_s = get_stats(fav_c), get_stats(dog_c)
+    fav_s, dog_s = _get_stats(fav_c), _get_stats(dog_c)
     reasons = []
 
     elo_gap = fav_s["elo"] - dog_s["elo"]
@@ -354,7 +374,7 @@ def live_match_state() -> dict:
         if not st or not st.get("in_play"):
             continue
         sa, sb = st["scores"].get(a, 0), st["scores"].get(b, 0)
-        model = MatchModel(get_stats(a), get_stats(b), a, b)
+        model = MatchModel(_get_stats(a), _get_stats(b), a, b)
         model.apply_live(sa, sb, st["minute"])
         p_a, p_b, p_d = model.p_win("a"), model.p_win("b"), model.p_draw()
         total = p_a + p_b + p_d or 1.0

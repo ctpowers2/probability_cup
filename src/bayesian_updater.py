@@ -1,22 +1,26 @@
 """
-Online Bayesian updater for WC 2026 team attack/defense parameters.
+Online Bayesian updater for WC 2026 team attack/defense/SOT parameters,
+plus an Elo forward pass from completed results.
 
 Model: Dixon-Coles Poisson
     mu_goals_a = attack_a * defense_b / LEAGUE_GOALS
+    mu_sot_a   = sot_a    * sot_against_b / LEAGUE_SOT
 
-For each observed result (goals_a, goals_b) we back-solve for the team's
-"effective" attack/defense performance that would have produced those goals
-under the current parameter estimates.  We then update each team's posterior
-via a Bayesian conjugate-like formula:
+For each observed result we back-solve for effective attack/defense (from
+goals) and effective SOT attack/defense (from shots on target).  Both are
+updated via the same Bayesian conjugate formula:
 
-    new_attack = (N0 * prior_attack + sum(effective_attacks)) / (N0 + n_games)
+    new_param = (N0 * prior + sum(effective)) / (N0 + n_games)
 
-with N0 = 10 (prior weight in equivalent games).  Iterating this 5 times
-constitutes a lightweight EM loop that lets parameters stabilise across
-multiple matches.
+with N0 = 10 (prior weight in equivalent games).  Iterating 5 times is a
+lightweight EM that lets parameters stabilise across multiple matches.
+
+Elo is updated with a standard WC-weight formula (K=60) applied in
+chronological order to every completed result.
 """
 
 import copy
+import math
 import requests
 from datetime import date, timedelta
 
@@ -24,8 +28,10 @@ from .team_data import TEAM_STATS
 from .live_scores import _ESPN_TO_CODE
 
 LEAGUE_GOALS: float = 1.35
+LEAGUE_SOT: float = 4.20   # league-avg SOT per team per game (same as models.py)
 N0: int = 10        # prior weight in equivalent games
 N_ITER: int = 5     # EM iterations
+ELO_K: float = 60.0  # WC match K-factor
 
 _WC_START = date(2026, 6, 11)
 _ESPN_SCOREBOARD = (
@@ -37,8 +43,23 @@ _ESPN_SCOREBOARD = (
 # Data fetching                                                        #
 # ------------------------------------------------------------------ #
 
+def _parse_sot(comp: dict, code: str) -> int | None:
+    """Extract shots-on-target for `code` from ESPN competition stats."""
+    for c in comp.get("competitors", []):
+        abbr = c["team"]["abbreviation"]
+        if _ESPN_TO_CODE.get(abbr, abbr.upper()) != code:
+            continue
+        for stat in c.get("statistics", []):
+            if stat.get("name") == "shotsOnTarget":
+                try:
+                    return int(stat["displayValue"])
+                except (KeyError, ValueError, TypeError):
+                    return None
+    return None
+
+
 def _fetch_day(d: date) -> list[dict]:
-    """Return completed WC match results for a single date."""
+    """Return completed WC match results (goals + SOT) for a single date."""
     url = f"{_ESPN_SCOREBOARD}?dates={d.strftime('%Y%m%d')}"
     try:
         r = requests.get(url, timeout=8)
@@ -61,12 +82,18 @@ def _fetch_day(d: date) -> list[dict]:
             except (ValueError, TypeError):
                 score = 0
             teams[code] = score
-        if len(teams) == 2:
-            codes = list(teams.keys())
-            games.append({
-                "team_a": codes[0], "team_b": codes[1],
-                "goals_a": teams[codes[0]], "goals_b": teams[codes[1]],
-            })
+        if len(teams) != 2:
+            continue
+        codes = list(teams.keys())
+        ta, tb = codes[0], codes[1]
+        ga, gb = teams[ta], teams[tb]
+        sot_a = _parse_sot(comp, ta)
+        sot_b = _parse_sot(comp, tb)
+        games.append({
+            "team_a": ta, "team_b": tb,
+            "goals_a": ga, "goals_b": gb,
+            "sot_a": sot_a, "sot_b": sot_b,
+        })
     return games
 
 
@@ -99,24 +126,26 @@ def compute_updated_stats(
     n_iter: int = N_ITER,
 ) -> dict:
     """
-    Run iterative Bayesian EM update on attack/defense parameters.
+    Run iterative Bayesian EM update on attack/defense and SOT parameters.
 
     Parameters
     ----------
-    results   : list of {"team_a", "team_b", "goals_a", "goals_b"}
+    results   : list of {"team_a", "team_b", "goals_a", "goals_b",
+                          "sot_a": int|None, "sot_b": int|None}
     n0        : prior strength (equivalent games)
     n_iter    : number of EM iterations
 
     Returns
     -------
-    Updated copy of TEAM_STATS with new attack/defense values.
+    Updated copy of TEAM_STATS with new attack/defense/sot/sot_against values.
     """
     stats: dict = copy.deepcopy(dict(TEAM_STATS))
 
-    for iteration in range(n_iter):
-        # Collect effective observations per team this iteration
-        atk_obs: dict[str, list[float]] = {}
-        def_obs: dict[str, list[float]] = {}
+    for _ in range(n_iter):
+        atk_obs:     dict[str, list[float]] = {}
+        def_obs:     dict[str, list[float]] = {}
+        sot_obs:     dict[str, list[float]] = {}
+        sotag_obs:   dict[str, list[float]] = {}
 
         for g in results:
             ta, tb = g["team_a"], g["team_b"]
@@ -130,34 +159,72 @@ def compute_updated_stats(
             def_a = max(stats[ta]["defense"], 0.01)
             def_b = max(stats[tb]["defense"], 0.01)
 
-            # DC back-solve:
-            #   mu_a = atk_a * def_b / L  =>  eff_atk_a = ga * L / def_b
-            #   mu_b = atk_b * def_a / L  =>  eff_atk_b = gb * L / def_a
-            #   mu_a = atk_a * def_b / L  =>  eff_def_b = ga * L / atk_a
-            #   mu_b = atk_b * def_a / L  =>  eff_def_a = gb * L / atk_b
-            eff_atk_a = ga * LEAGUE_GOALS / def_b
-            eff_atk_b = gb * LEAGUE_GOALS / def_a
-            eff_def_b = ga * LEAGUE_GOALS / atk_a
-            eff_def_a = gb * LEAGUE_GOALS / atk_b
+            # Goals back-solve (Dixon-Coles):
+            atk_obs.setdefault(ta, []).append(ga * LEAGUE_GOALS / def_b)
+            atk_obs.setdefault(tb, []).append(gb * LEAGUE_GOALS / def_a)
+            def_obs.setdefault(tb, []).append(ga * LEAGUE_GOALS / atk_a)
+            def_obs.setdefault(ta, []).append(gb * LEAGUE_GOALS / atk_b)
 
-            atk_obs.setdefault(ta, []).append(eff_atk_a)
-            atk_obs.setdefault(tb, []).append(eff_atk_b)
-            def_obs.setdefault(tb, []).append(eff_def_b)
-            def_obs.setdefault(ta, []).append(eff_def_a)
+            # SOT back-solve (same structure, skip if ESPN didn't return stats)
+            sa, sb = g.get("sot_a"), g.get("sot_b")
+            if sa is not None and sb is not None:
+                sot_a_p = max(stats[ta]["sot"],        0.01)
+                sot_b_p = max(stats[tb]["sot"],        0.01)
+                sag_a   = max(stats[ta]["sot_against"], 0.01)
+                sag_b   = max(stats[tb]["sot_against"], 0.01)
 
-        # Bayesian posterior update (always use the ORIGINAL prior)
+                sot_obs.setdefault(ta,  []).append(sa * LEAGUE_SOT / sag_b)
+                sot_obs.setdefault(tb,  []).append(sb * LEAGUE_SOT / sag_a)
+                sotag_obs.setdefault(tb, []).append(sa * LEAGUE_SOT / sot_a_p)
+                sotag_obs.setdefault(ta, []).append(sb * LEAGUE_SOT / sot_b_p)
+
+        # Bayesian posterior update (always shrink toward ORIGINAL prior)
         for code in stats:
-            prior_atk = TEAM_STATS[code]["attack"]
-            prior_def = TEAM_STATS[code]["defense"]
+            prior = TEAM_STATS[code]
 
             if code in atk_obs:
                 obs = atk_obs[code]
-                stats[code]["attack"] = (n0 * prior_atk + sum(obs)) / (n0 + len(obs))
+                stats[code]["attack"] = (n0 * prior["attack"] + sum(obs)) / (n0 + len(obs))
 
             if code in def_obs:
                 obs = def_obs[code]
-                stats[code]["defense"] = (n0 * prior_def + sum(obs)) / (n0 + len(obs))
+                stats[code]["defense"] = (n0 * prior["defense"] + sum(obs)) / (n0 + len(obs))
 
+            if code in sot_obs:
+                obs = sot_obs[code]
+                stats[code]["sot"] = (n0 * prior["sot"] + sum(obs)) / (n0 + len(obs))
+
+            if code in sotag_obs:
+                obs = sotag_obs[code]
+                stats[code]["sot_against"] = (n0 * prior["sot_against"] + sum(obs)) / (n0 + len(obs))
+
+    return stats
+
+
+# ------------------------------------------------------------------ #
+# Elo update                                                           #
+# ------------------------------------------------------------------ #
+
+def _elo_expected(ra: float, rb: float) -> float:
+    return 1.0 / (1.0 + math.pow(10, (rb - ra) / 400.0))
+
+
+def compute_updated_elo(results: list[dict], stats: dict) -> dict:
+    """
+    Forward-pass Elo update on completed WC results (K=60).
+    Mutates and returns `stats` in-place.
+    """
+    for g in results:
+        ta, tb = g["team_a"], g["team_b"]
+        if ta not in stats or tb not in stats:
+            continue
+        ra, rb = stats[ta]["elo"], stats[tb]["elo"]
+        ga, gb = g["goals_a"], g["goals_b"]
+        score_a = 0.5 if ga == gb else (1.0 if ga > gb else 0.0)
+        exp_a = _elo_expected(ra, rb)
+        delta = ELO_K * (score_a - exp_a)
+        stats[ta]["elo"] = ra + delta
+        stats[tb]["elo"] = rb - delta
     return stats
 
 
@@ -167,11 +234,9 @@ def compute_updated_stats(
 
 def get_dynamic_stats() -> tuple[dict, int, float]:
     """
-    Fetch completed WC results, run Bayesian EM.
+    Fetch completed WC results, run Bayesian EM on attack/defense/SOT,
+    then forward-pass Elo updates from results.
     Returns (updated_stats, n_games, wc_goals_scale).
-
-    wc_goals_scale = observed WC goals per team per game / LEAGUE_GOALS prior.
-    Starts at 1.0 with no data; converges to the true WC scoring rate.
     """
     results = get_completed_results()
     n = len(results)
@@ -181,4 +246,5 @@ def get_dynamic_stats() -> tuple[dict, int, float]:
     wc_goals_per_team = total_goals / (2 * n)
     wc_goals_scale = wc_goals_per_team / LEAGUE_GOALS
     updated = compute_updated_stats(results)
+    updated = compute_updated_elo(results, updated)
     return updated, n, wc_goals_scale

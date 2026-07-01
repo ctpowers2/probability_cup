@@ -9,25 +9,27 @@
 # so_skill: penalty-shootout skill, ~0.5 = average (from historical shootout records)
 
 TEAM_STATS: dict[str, dict] = {
-    "ARG": {"attack": 2.27, "defense": 0.68, "sot": 5.8, "sot_against": 3.2, "fouls": 13.5, "offsides": 3.2, "corners": 5.8, "yellows": 1.8, "elo": 2148, "so_skill": 0.64},
-    "FRA": {"attack": 2.26, "defense": 0.68, "sot": 5.5, "sot_against": 3.0, "fouls": 14.0, "offsides": 2.5, "corners": 6.0, "yellows": 1.7, "elo": 2134, "so_skill": 0.46},
-    "ENG": {"attack": 1.83, "defense": 0.71, "sot": 5.8, "sot_against": 3.1, "fouls": 12.5, "offsides": 3.5, "corners": 5.5, "yellows": 1.5, "elo": 2038, "so_skill": 0.36},
-    "BRA": {"attack": 1.94, "defense": 0.78, "sot": 6.0, "sot_against": 3.2, "fouls": 14.5, "offsides": 2.8, "corners": 6.2, "yellows": 2.0, "elo": 2031, "so_skill": 0.53},
-    "ESP": {"attack": 2.04, "defense": 0.65, "sot": 5.5, "sot_against": 2.8, "fouls": 11.0, "offsides": 2.0, "corners": 5.8, "yellows": 1.6, "elo": 2144, "so_skill": 0.5},
-    "GER": {"attack": 1.68, "defense": 0.81, "sot": 5.2, "sot_against": 3.5, "fouls": 12.5, "offsides": 2.5, "corners": 5.5, "yellows": 1.5, "elo": 1908, "so_skill": 0.73},
-    "POR": {"attack": 2.04, "defense": 0.78, "sot": 5.8, "sot_against": 3.0, "fouls": 13.0, "offsides": 2.8, "corners": 5.5, "yellows": 1.8, "elo": 1990, "so_skill": 0.55},
-    "NED": {"attack": 1.73, "defense": 0.78, "sot": 5.0, "sot_against": 3.4, "fouls": 13.0, "offsides": 2.8, "corners": 5.5, "yellows": 1.7, "elo": 1971, "so_skill": 0.33},
-    "BEL": {"attack": 1.57, "defense": 0.87, "sot": 4.8, "sot_against": 3.5, "fouls": 13.5, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1884, "so_skill": 0.5},
-    "URU": {"attack": 1.54, "defense": 0.81, "sot": 4.5, "sot_against": 3.2, "fouls": 15.5, "offsides": 2.2, "corners": 5.2, "yellows": 2.2, "elo": 1841, "so_skill": 0.5},
-    "MEX": {"attack": 1.54, "defense": 0.89, "sot": 4.5, "sot_against": 3.8, "fouls": 13.5, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1943, "so_skill": 0.47},
-    "USA": {"attack": 1.43, "defense": 0.94, "sot": 4.5, "sot_against": 3.5, "fouls": 13.0, "offsides": 2.3, "corners": 5.0, "yellows": 1.6, "elo": 1781, "so_skill": 0.5},
-    "COL": {"attack": 1.73, "defense": 0.84, "sot": 4.8, "sot_against": 3.8, "fouls": 14.5, "offsides": 2.5, "corners": 5.2, "yellows": 2.0, "elo": 2004, "so_skill": 0.5},
-    "SUI": {"attack": 1.52, "defense": 0.78, "sot": 4.5, "sot_against": 3.5, "fouls": 13.5, "offsides": 2.0, "corners": 5.0, "yellows": 1.7, "elo": 1914, "so_skill": 0.33},
-    "JPN": {"attack": 1.55, "defense": 0.87, "sot": 4.5, "sot_against": 3.5, "fouls": 11.5, "offsides": 2.3, "corners": 4.8, "yellows": 1.4, "elo": 1888, "so_skill": 0.45},
-    "MAR": {"attack": 1.39, "defense": 0.7, "sot": 4.2, "sot_against": 3.0, "fouls": 14.0, "offsides": 2.0, "corners": 4.8, "yellows": 2.0, "elo": 1886, "so_skill": 0.5},
-    "SEN": {"attack": 1.47, "defense": 0.99, "sot": 4.2, "sot_against": 3.5, "fouls": 14.5, "offsides": 2.2, "corners": 4.8, "yellows": 1.9, "elo": 1842, "so_skill": 0.38},
-    "CRO": {"attack": 1.48, "defense": 0.8, "sot": 4.3, "sot_against": 3.5, "fouls": 14.0, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1905, "so_skill": 0.67},
-    "TUR": {"attack": 1.43, "defense": 0.93, "sot": 4.3, "sot_against": 3.8, "fouls": 14.5, "offsides": 2.3, "corners": 5.0, "yellows": 2.0, "elo": 1852, "so_skill": 0.5},
+    # so_skill derived from historical WC + major continental tournament shootout records
+    # Formula: (1.5 + W) / (3 + W + L)  — Bayesian shrinkage toward 0.5 with 3 prior games
+    "ARG": {"attack": 2.27, "defense": 0.68, "sot": 5.8, "sot_against": 3.2, "fouls": 13.5, "offsides": 3.2, "corners": 5.8, "yellows": 1.8, "elo": 2148, "so_skill": 0.70},  # 6-1
+    "FRA": {"attack": 2.26, "defense": 0.68, "sot": 5.5, "sot_against": 3.0, "fouls": 14.0, "offsides": 2.5, "corners": 6.0, "yellows": 1.7, "elo": 2134, "so_skill": 0.39},  # 2-4
+    "ENG": {"attack": 1.83, "defense": 0.71, "sot": 5.8, "sot_against": 3.1, "fouls": 12.5, "offsides": 3.5, "corners": 5.5, "yellows": 1.5, "elo": 2038, "so_skill": 0.28},  # 1-5
+    "BRA": {"attack": 1.94, "defense": 0.78, "sot": 6.0, "sot_against": 3.2, "fouls": 14.5, "offsides": 2.8, "corners": 6.2, "yellows": 2.0, "elo": 2031, "so_skill": 0.55},  # 4-2
+    "ESP": {"attack": 2.04, "defense": 0.65, "sot": 5.5, "sot_against": 2.8, "fouls": 11.0, "offsides": 2.0, "corners": 5.8, "yellows": 1.6, "elo": 2144, "so_skill": 0.45},  # 3-4
+    "GER": {"attack": 1.68, "defense": 0.81, "sot": 5.2, "sot_against": 3.5, "fouls": 12.5, "offsides": 2.5, "corners": 5.5, "yellows": 1.5, "elo": 1908, "so_skill": 0.72},  # 6-1
+    "POR": {"attack": 2.04, "defense": 0.78, "sot": 5.8, "sot_against": 3.0, "fouls": 13.0, "offsides": 2.8, "corners": 5.5, "yellows": 1.8, "elo": 1990, "so_skill": 0.63},  # 4-1
+    "NED": {"attack": 1.73, "defense": 0.78, "sot": 5.0, "sot_against": 3.4, "fouls": 13.0, "offsides": 2.8, "corners": 5.5, "yellows": 1.7, "elo": 1971, "so_skill": 0.24},  # 1-6
+    "BEL": {"attack": 1.57, "defense": 0.87, "sot": 4.8, "sot_against": 3.5, "fouls": 13.5, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1884, "so_skill": 0.50},  # 1-1
+    "URU": {"attack": 1.54, "defense": 0.81, "sot": 4.5, "sot_against": 3.2, "fouls": 15.5, "offsides": 2.2, "corners": 5.2, "yellows": 2.2, "elo": 1841, "so_skill": 0.40},  # 1-2
+    "MEX": {"attack": 1.54, "defense": 0.89, "sot": 4.5, "sot_against": 3.8, "fouls": 13.5, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1943, "so_skill": 0.38},  # 0-1
+    "USA": {"attack": 1.43, "defense": 0.94, "sot": 4.5, "sot_against": 3.5, "fouls": 13.0, "offsides": 2.3, "corners": 5.0, "yellows": 1.6, "elo": 1781, "so_skill": 0.50},  # no record
+    "COL": {"attack": 1.73, "defense": 0.84, "sot": 4.8, "sot_against": 3.8, "fouls": 14.5, "offsides": 2.5, "corners": 5.2, "yellows": 2.0, "elo": 2004, "so_skill": 0.44},  # 1-2 (incl. Copa)
+    "SUI": {"attack": 1.52, "defense": 0.78, "sot": 4.5, "sot_against": 3.5, "fouls": 13.5, "offsides": 2.0, "corners": 5.0, "yellows": 1.7, "elo": 1914, "so_skill": 0.36},  # 1-3
+    "JPN": {"attack": 1.55, "defense": 0.87, "sot": 4.5, "sot_against": 3.5, "fouls": 11.5, "offsides": 2.3, "corners": 4.8, "yellows": 1.4, "elo": 1888, "so_skill": 0.33},  # 0-3
+    "MAR": {"attack": 1.39, "defense": 0.7, "sot": 4.2, "sot_against": 3.0, "fouls": 14.0, "offsides": 2.0, "corners": 4.8, "yellows": 2.0, "elo": 1886, "so_skill": 0.50},  # 1-1
+    "SEN": {"attack": 1.47, "defense": 0.99, "sot": 4.2, "sot_against": 3.5, "fouls": 14.5, "offsides": 2.2, "corners": 4.8, "yellows": 1.9, "elo": 1842, "so_skill": 0.55},  # 2-1
+    "CRO": {"attack": 1.48, "defense": 0.8, "sot": 4.3, "sot_against": 3.5, "fouls": 14.0, "offsides": 2.5, "corners": 5.0, "yellows": 1.8, "elo": 1905, "so_skill": 0.69},  # 4-0 WC (5-1 overall)
+    "TUR": {"attack": 1.43, "defense": 0.93, "sot": 4.3, "sot_against": 3.8, "fouls": 14.5, "offsides": 2.3, "corners": 5.0, "yellows": 2.0, "elo": 1852, "so_skill": 0.56},  # 1-0
     "NOR": {"attack": 1.95, "defense": 0.93, "sot": 4.8, "sot_against": 4.0, "fouls": 12.5, "offsides": 3.5, "corners": 5.2, "yellows": 1.5, "elo": 1934, "so_skill": 0.5},
     "CZE": {"attack": 1.24, "defense": 1.02, "sot": 4.2, "sot_against": 3.8, "fouls": 13.0, "offsides": 2.0, "corners": 4.8, "yellows": 1.7, "elo": 1680, "so_skill": 0.6},
     "KOR": {"attack": 1.24, "defense": 1.02, "sot": 3.8, "sot_against": 3.8, "fouls": 12.5, "offsides": 2.0, "corners": 4.5, "yellows": 1.6, "elo": 1723, "so_skill": 0.62},
