@@ -109,9 +109,12 @@ class LiveSim:
         if not m:
             raise ValueError(f"Unknown match: {match_id!r}")
 
-        # Use the same dynamic stats pool uses so opening odds match the card
-        stats_a = pool._get_stats(m["team_a"])
-        stats_b = pool._get_stats(m["team_b"])
+        # Read directly from the shared stats cache so we use the exact same
+        # values that produced the card's AI odds — no race with background threads.
+        cached = pool._stats_cache.get("stats") or {}
+        from src.team_data import get_stats as _static
+        stats_a = cached.get(m["team_a"]) or _static(m["team_a"])
+        stats_b = cached.get(m["team_b"]) or _static(m["team_b"])
         model = MatchModel(stats_a, stats_b, m["team_a"], m["team_b"])
 
         reg_goals = _sample_goals(model.mu_goals_a, model.mu_goals_b, 1, 90)
