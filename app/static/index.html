@@ -204,6 +204,7 @@
   .goal-chip { font-family: var(--font-mono); font-size: 11.5px; background: rgba(0,0,0,.3);
     border: 1px solid var(--line); border-radius: 20px; padding: 4px 11px; }
   .live-final { text-align: center; margin-top: 12px; font-weight: 700; color: var(--good); }
+  .live-proj { text-align: center; margin-top: 10px; font-size: 13px; font-weight: 500; }
 
   .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
     background: var(--good); color: #04231a; padding: 11px 20px; border-radius: 12px; font-weight: 600;
@@ -505,6 +506,36 @@ async function tickLive() {
   renderLivePanel(s);
 }
 
+function projectedScoreLine(s) {
+  if (!name() || !s.match_id) return "";
+  const pick = MY_PICKS[s.match_id];
+  if (!pick) return "";
+  const conf = MY_CONFS[s.match_id] || 0.65;
+
+  // Determine projected outcome from current scoreline
+  let projected;
+  if (s.score_a > s.score_b) projected = "a";
+  else if (s.score_b > s.score_a) projected = "b";
+  else projected = "draw";
+
+  // Build prob vector (mirrors _pick_to_vec in pool.py)
+  const outcomes = s.ai.draw !== undefined ? ["a", "draw", "b"] : ["a", "b"];
+  const others = outcomes.filter(o => o !== pick);
+  const rest = (1 - conf) / others.length;
+  const vec = Object.fromEntries(outcomes.map(o => [o, o === pick ? conf : rest]));
+
+  // Brier score for this projected outcome
+  const brier = outcomes.reduce((sum, o) => sum + (vec[o] - (o === projected ? 1 : 0)) ** 2, 0);
+  const score = Math.round((1 - brier / 2) * 100);
+
+  const correct = pick === projected;
+  const color = correct ? "var(--good)" : "var(--rose)";
+  const icon = correct ? "✓" : "✗";
+  const outcomeLabel = projected === "a" ? s.name_a : projected === "b" ? s.name_b : "Draw";
+  const verb = correct ? "earn" : "score";
+  return `<div class="live-proj" style="color:${color}">${icon} If ${outcomeLabel} wins, you ${verb} <b>${score}</b> on this match</div>`;
+}
+
 function renderLivePanel(s) {
   const panel = document.getElementById("live-panel");
   if (!s || !s.active) { panel.classList.remove("on"); panel.innerHTML = ""; return; }
@@ -517,6 +548,7 @@ function renderLivePanel(s) {
     : "🤖 AI win probability — real match, updating live";
   const goals = (s.goals || []).map(g => `<span class="goal-chip">⚽ ${g.minute}' ${g.team}</span>`).join("");
   const ticker = sim ? `<div class="live-ticker">${goals || '<span class="goal-chip">No goals yet</span>'}</div>` : "";
+  const proj = projectedScoreLine(s);
   const footer = s.finished
     ? (sim ? `<div class="live-final" style="color:var(--muted-dim)">Simulation complete — not scored</div>`
            : `<div class="live-final">✓ Full time — leaderboard updated</div>`)
@@ -538,6 +570,7 @@ function renderLivePanel(s) {
       <div class="oddsbar">${oddsBar(s.ai)}</div>
       <div class="oddslabels">${oddsLabels(s)}</div>
       ${ticker}
+      ${proj}
       ${footer}
     </div>`;
 
