@@ -520,13 +520,22 @@ def clear_results() -> None:
 # --------------------------------------------------------------------------- #
 def _score(prob_vec: dict, outcome: str) -> int:
     """
-    Score = (probability assigned to the actual outcome - 0.5) * 100.
+    Score = (p_winner² − p_loser²) × 50.
 
-    Range: -50 (100% confident on wrong team) to +50 (100% confident on right team).
-    Crossing zero requires giving >50% to the winner, so correct pick = positive,
-    wrong pick = negative, always — regardless of confidence level.
+    p_winner = probability assigned to the outcome that actually happened.
+    p_loser  = remaining probability (1 − p_winner).
+
+    Properties:
+    - Right pick is always positive, wrong pick always negative (guaranteed).
+    - Quadratic penalty discourages slamming confidence to max — proper scoring rule.
+    - Range: −50 (100% on loser) to +50 (100% on winner).
+
+    Note: with 2 outcomes this equals (2·p_winner − 1)·50, identical to linear.
+    The quadratic term only bites with 3+ outcomes (group stage draws).
     """
-    return round((prob_vec[outcome] - 0.5) * 100)
+    p_win = prob_vec[outcome]
+    p_lose = 1.0 - p_win
+    return round((p_win ** 2 - p_lose ** 2) * 50)
 
 
 

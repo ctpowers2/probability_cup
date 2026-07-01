@@ -621,8 +621,10 @@ function projectedScoreLine(s) {
   const rest = (1 - conf) / others.length;
   const vec = Object.fromEntries(outcomes.map(o => [o, o === pick ? conf : rest]));
 
-  // Score = (prob assigned to actual outcome - 0.5) * 100
-  const score = Math.round((vec[projected] - 0.5) * 100);
+  // Score = (p_winner² − p_loser²) × 50
+  const pWin = vec[projected];
+  const pLose = 1 - pWin;
+  const score = Math.round((pWin ** 2 - pLose ** 2) * 50);
   const scoreStr = (score > 0 ? "+" : "") + score;
 
   const correct = pick === projected;
