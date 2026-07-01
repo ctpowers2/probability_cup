@@ -481,7 +481,7 @@ function breakdownRow(p) {
     return `<tr>
       <td class="bd-match">${b.match}</td>
       <td>${icon} ${b.pick}${confLabel}</td>
-      <td class="bd-score ${scoreClass}">${b.score}</td>
+      <td class="bd-score ${scoreClass}">${b.score > 0 ? "+" : ""}${b.score}</td>
     </tr>`;
   }).join("");
   return `<tr id="${bdId}" style="display:none">
@@ -501,8 +501,10 @@ async function loadLeaderboard() {
   const rows = d.players.map((p, i) => {
     const isPublicLine = p.name === "📊 Public line";
     const cls = [p.is_ai ? (isPublicLine ? "public-row" : "ai-row") : "", (!p.is_ai && p.name === name()) ? "me" : ""].join(" ").trim();
-    const rank = p.avg_brier === null ? "—" : (i + 1);
-    const score = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : Math.round((1 - p.avg_brier / 2) * 100);
+    const rank = p.total_score === null ? "—" : (i + 1);
+    const s = p.total_score;
+    const scoreStr = s === null ? "<span style='color:var(--muted)'>no results yet</span>"
+      : `<span style='color:${s > 0 ? "var(--green, #22c55e)" : s < 0 ? "var(--rose)" : "var(--muted)"}'>${s > 0 ? "+" : ""}${s}</span>`;
     const acc = p.total ? `${p.correct}/${p.total}` : "—";
     const hasBreakdown = p.breakdown && p.breakdown.length > 0;
     const bdId = `bd-${p.name.replace(/\W/g,'_')}`;
@@ -512,11 +514,11 @@ async function loadLeaderboard() {
     return `<tr class="${cls}">
       <td>${rank}</td>
       <td>${p.name}${toggle}</td>
-      <td class="num">${score}</td><td class="num">${acc}</td>
+      <td class="num">${scoreStr}</td><td class="num">${acc}</td>
     </tr>${breakdownRow(p)}`;
   }).join("");
   el.innerHTML = `<table>
-    <thead><tr><th>#</th><th>Player</th><th class="num">Score ↑</th><th class="num">Correct</th></tr></thead>
+    <thead><tr><th>#</th><th>Player</th><th class="num">Score</th><th class="num">Correct</th></tr></thead>
     <tbody>${rows}</tbody></table>
     ${d.resolved_count === 0 ? `<p class="hint">Standings update automatically as real matches finish.</p>` : ""}`;
 }
@@ -621,14 +623,14 @@ function projectedScoreLine(s) {
 
   // Brier score for this projected outcome
   const brier = outcomes.reduce((sum, o) => sum + (vec[o] - (o === projected ? 1 : 0)) ** 2, 0);
-  const score = Math.round((1 - brier / 2) * 100);
+  const score = Math.round((1 - brier / 2) * 100) - 50;
+  const scoreStr = (score > 0 ? "+" : "") + score;
 
   const correct = pick === projected;
   const color = correct ? "var(--good)" : "var(--rose)";
   const icon = correct ? "✓" : "✗";
   const outcomeLabel = projected === "a" ? s.name_a : projected === "b" ? s.name_b : "Draw";
-  const verb = correct ? "earn" : "score";
-  return `<div class="live-proj" style="color:${color}">${icon} If ${outcomeLabel} wins, you ${verb} <b>${score}</b> on this match</div>`;
+  return `<div class="live-proj" style="color:${color}">${icon} If ${outcomeLabel} wins, you ${correct ? "earn" : "lose"} <b>${scoreStr}</b> on this match</div>`;
 }
 
 function renderLivePanel(s) {
