@@ -58,20 +58,46 @@ DEMO_FIXTURES = [
 ]
 
 
+# Of the ties still level after 90', the share settled in extra time (a goal)
+# rather than going all the way to a shootout. The rest are decided on penalties.
+ET_DECISIVE = 0.5
+
+
+def shootout_edge(code_a: str, code_b: str) -> float:
+    """P(A beats B in a shootout) from per-team shootout skill (Bradley–Terry)."""
+    sa = get_stats(code_a).get("so_skill", 0.5)
+    sb = get_stats(code_b).get("so_skill", 0.5)
+    num = sa * (1 - sb)
+    den = num + sb * (1 - sa)
+    return num / den if den else 0.5
+
+
+def knockout_win_prob(p_a: float, p_b: float, p_d: float,
+                      code_a: str, code_b: str) -> float:
+    """
+    P(A wins the tie): win in regulation, plus the draw mass resolved by
+    extra time (share ET_DECISIVE, split by regulation strength) and by a
+    penalty shootout (the rest, split by shootout skill).
+    """
+    reg = p_a + p_b or 1.0
+    tie_a = ET_DECISIVE * (p_a / reg) + (1 - ET_DECISIVE) * shootout_edge(code_a, code_b)
+    return p_a + p_d * tie_a
+
+
 def ai_odds(code_a: str, code_b: str) -> dict:
     """
     Normalized AI probabilities for a match.
-    Knockout: two-way {a, b} — the draw mass is resolved in ET/penalties,
-    allocated in proportion to each side's regulation win probability
-    (i.e. P(A wins tie) = pA / (pA + pB)). Group stage: three-way {a, draw, b}.
+    Knockout: two-way {a, b} — the draw mass is resolved in extra time (by
+    strength) and penalties (by each team's shootout skill). Group: {a, draw, b}.
     """
     model = MatchModel(get_stats(code_a), get_stats(code_b), code_a, code_b)
     p_a = model.p_win("a")
     p_b = model.p_win("b")
-    if KNOCKOUT:
-        total = p_a + p_b or 1.0
-        return {"a": p_a / total, "b": p_b / total}
     p_d = model.p_draw()
+    if KNOCKOUT:
+        qa = knockout_win_prob(p_a, p_b, p_d, code_a, code_b)
+        total = p_a + p_b + p_d or 1.0
+        return {"a": qa / total, "b": (total - qa) / total}
     total = p_a + p_b + p_d or 1.0
     return {"a": p_a / total, "draw": p_d / total, "b": p_b / total}
 
@@ -107,6 +133,12 @@ def rationale(code_a: str, code_b: str, odds: dict) -> str:
     # Lower 'defense' = fewer goals conceded = better defense.
     if dog_s["defense"] - fav_s["defense"] >= 0.20:
         reasons.append(f"a tighter defense ({fav_s['defense']:.1f} vs {dog_s['defense']:.1f} conceded)")
+
+    # In the knockouts, a shootout edge can be the deciding factor in a tight tie.
+    if KNOCKOUT:
+        sf, sd = fav_s.get("so_skill", 0.5), dog_s.get("so_skill", 0.5)
+        if sf - sd >= 0.10:
+            reasons.append(f"a stronger shootout record ({sf:.2f} vs {sd:.2f})")
 
     lead = f"{team_name(fav_c)} {odds[fav] * 100:.0f}%"
     xg = f"projected scoreline {mu_f:.1f}–{mu_d:.1f}"
