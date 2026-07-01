@@ -275,6 +275,26 @@ function outcomeLabel(m, o) {
   return o === "a" ? m.name_a : o === "b" ? m.name_b : "Draw";
 }
 
+function hasDraw(ai) { return ai && ai.draw !== undefined; }
+
+function oddsBar(ai) {
+  const draw = hasDraw(ai) ? `<div class="seg-draw" style="width:${ai.draw}%"></div>` : "";
+  return `<div class="seg-a" style="width:${ai.a}%"></div>${draw}<div class="seg-b" style="width:${ai.b}%"></div>`;
+}
+
+function oddsLabels(m) {
+  const ai = m.ai;
+  const draw = hasDraw(ai) ? `<span><b>${ai.draw}%</b> Draw</span>` : "";
+  return `<span><b>${ai.a}%</b> ${m.name_a}</span>${draw}<span>${m.name_b} <b>${ai.b}%</b></span>`;
+}
+
+function pickButtons(m, mine) {
+  const btns = [`<div class="pick-btn ${mine==="a"?"sel-a":""}" data-o="a">${m.name_a}</div>`];
+  if (hasDraw(m.ai)) btns.push(`<div class="pick-btn ${mine==="draw"?"sel-draw":""}" data-o="draw">Draw</div>`);
+  btns.push(`<div class="pick-btn ${mine==="b"?"sel-b":""}" data-o="b">${m.name_b}</div>`);
+  return btns.join("");
+}
+
 function renderMatches() {
   const el = document.getElementById("matches");
   el.innerHTML = "";
@@ -292,22 +312,10 @@ function renderMatches() {
         <span class="vs">vs</span>
         <span>${m.name_b}</span>
       </div>
-      <div class="oddsbar">
-        <div class="seg-a" style="width:${m.ai.a}%"></div>
-        <div class="seg-draw" style="width:${m.ai.draw}%"></div>
-        <div class="seg-b" style="width:${m.ai.b}%"></div>
-      </div>
-      <div class="oddslabels">
-        <span><b>${m.ai.a}%</b> ${m.name_a}</span>
-        <span><b>${m.ai.draw}%</b> Draw</span>
-        <span>${m.name_b} <b>${m.ai.b}%</b></span>
-      </div>
+      <div class="oddsbar">${oddsBar(m.ai)}</div>
+      <div class="oddslabels">${oddsLabels(m)}</div>
       <div class="rationale">💡 ${m.ai_rationale}</div>
-      <div class="picks">
-        <div class="pick-btn ${mine==="a"?"sel-a":""}" data-o="a">${m.name_a}</div>
-        <div class="pick-btn ${mine==="draw"?"sel-draw":""}" data-o="draw">Draw</div>
-        <div class="pick-btn ${mine==="b"?"sel-b":""}" data-o="b">${m.name_b}</div>
-      </div>
+      <div class="picks">${pickButtons(m, mine)}</div>
       ${res ? `<span class="result-tag">✓ Result: ${outcomeLabel(m, res)}${mine ? (mine===res ? " — you nailed it!" : " — AI/you differ") : ""}</span>` : ""}
       <button class="golive-btn" data-live="${m.id}">▶ Simulate live</button>
     `;
@@ -336,9 +344,9 @@ async function loadMatches() {
   const d = await api("/api/matches");
   MATCHES = d.matches;
   const flag = document.getElementById("slate-flag");
-  if (flag) flag.textContent = d.live
-    ? "World Cup 2026 · live fixtures"
-    : "World Cup 2026 · sample fixtures";
+  if (flag) flag.textContent =
+    (d.live ? "World Cup 2026 · live fixtures" : "World Cup 2026 · sample fixtures")
+    + (d.knockout ? " · knockout" : "");
   renderMatches();
   renderDemoControls();
 }
@@ -380,7 +388,7 @@ function renderDemoControls() {
     <div class="demo-row">
       <div class="lbl">${m.name_a} vs ${m.name_b}</div>
       <button onclick="setResult('${m.id}','a')">${m.name_a}</button>
-      <button onclick="setResult('${m.id}','draw')">Draw</button>
+      ${hasDraw(m.ai) ? `<button onclick="setResult('${m.id}','draw')">Draw</button>` : ""}
       <button onclick="setResult('${m.id}','b')">${m.name_b}</button>
     </div>`).join("");
 }
@@ -446,16 +454,8 @@ async function pollLive() {
         <span class="tn">${s.name_b}</span>
       </div>
       <div class="live-odds-note">🤖 AI win probability — updating live as the match unfolds</div>
-      <div class="oddsbar">
-        <div class="seg-a" style="width:${s.ai.a}%"></div>
-        <div class="seg-draw" style="width:${s.ai.draw}%"></div>
-        <div class="seg-b" style="width:${s.ai.b}%"></div>
-      </div>
-      <div class="oddslabels">
-        <span><b>${s.ai.a}%</b> ${s.name_a}</span>
-        <span><b>${s.ai.draw}%</b> Draw</span>
-        <span>${s.name_b} <b>${s.ai.b}%</b></span>
-      </div>
+      <div class="oddsbar">${oddsBar(s.ai)}</div>
+      <div class="oddslabels">${oddsLabels(s)}</div>
       <div class="live-ticker">${goals || '<span class="goal-chip">No goals yet</span>'}</div>
       ${s.finished ? `<div class="live-final">✓ Full time — result locked into the leaderboard</div>` : ""}
     </div>`;

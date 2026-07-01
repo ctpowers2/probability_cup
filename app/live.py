@@ -80,14 +80,28 @@ class LiveSim:
         model = MatchModel(get_stats(m["team_a"]), get_stats(m["team_b"]),
                            m["team_a"], m["team_b"])
         model.apply_live(sa, sb, minute)
-        p_a, p_b, p_d = model.p_win("a"), model.p_win("b"), model.p_draw()
-        total = p_a + p_b + p_d or 1.0
-        odds = {"a": p_a / total, "draw": p_d / total, "b": p_b / total}
+        p_a, p_b = model.p_win("a"), model.p_win("b")
+        if pool.KNOCKOUT:
+            total = p_a + p_b or 1.0
+            odds = {"a": p_a / total, "b": p_b / total}
+        else:
+            p_d = model.p_draw()
+            total = p_a + p_b + p_d or 1.0
+            odds = {"a": p_a / total, "draw": p_d / total, "b": p_b / total}
 
         finished = minute >= 90
         # Auto-settle the final result into the pool exactly once.
         if finished and not self.settled:
-            outcome = "a" if sa > sb else "b" if sb > sa else "draw"
+            if sa > sb:
+                outcome = "a"
+            elif sb > sa:
+                outcome = "b"
+            elif pool.KNOCKOUT:
+                # Level at full time → decided by ET/penalties, weighted by
+                # each side's win odds at the whistle.
+                outcome = "a" if float(np.random.random()) < odds["a"] else "b"
+            else:
+                outcome = "draw"
             pool.set_result(self.match_id, outcome)
             with _LOCK:
                 self.settled = True

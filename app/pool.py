@@ -23,8 +23,12 @@ DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
 _LOCK = threading.Lock()
 
+# Knockout mode: no draws — a tie is decided in extra time / penalties, so every
+# market is a two-way "who wins the tie". Set PC_KNOCKOUT=0 for group-stage 1X2.
+KNOCKOUT = os.environ.get("PC_KNOCKOUT", "1") != "0"
+
 # Outcomes, in fixed order — used for the Brier probability vector.
-OUTCOMES = ("a", "draw", "b")
+OUTCOMES = ("a", "b") if KNOCKOUT else ("a", "draw", "b")
 
 # Live tournament API. Override the key with SPORTSPREDICT_API_KEY;
 # set PC_USE_LIVE=0 to force the curated demo slate instead.
@@ -55,10 +59,18 @@ DEMO_FIXTURES = [
 
 
 def ai_odds(code_a: str, code_b: str) -> dict:
-    """Return normalized AI probabilities {a, draw, b} for a match."""
+    """
+    Normalized AI probabilities for a match.
+    Knockout: two-way {a, b} — the draw mass is resolved in ET/penalties,
+    allocated in proportion to each side's regulation win probability
+    (i.e. P(A wins tie) = pA / (pA + pB)). Group stage: three-way {a, draw, b}.
+    """
     model = MatchModel(get_stats(code_a), get_stats(code_b), code_a, code_b)
     p_a = model.p_win("a")
     p_b = model.p_win("b")
+    if KNOCKOUT:
+        total = p_a + p_b or 1.0
+        return {"a": p_a / total, "b": p_b / total}
     p_d = model.p_draw()
     total = p_a + p_b + p_d or 1.0
     return {"a": p_a / total, "draw": p_d / total, "b": p_b / total}

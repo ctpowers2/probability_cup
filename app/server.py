@@ -39,7 +39,8 @@ class LiveStartIn(BaseModel):
 
 @app.get("/api/matches")
 def api_matches():
-    return {"matches": pool.build_matches(), "live": pool.is_live_slate()}
+    return {"matches": pool.build_matches(), "live": pool.is_live_slate(),
+            "knockout": pool.KNOCKOUT}
 
 
 @app.get("/api/picks/{user}")
