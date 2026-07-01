@@ -63,6 +63,7 @@ def get_live_states() -> dict[frozenset, dict]:
 
         # Parse the two competitors
         teams: dict[str, int] = {}
+        winner: str | None = None
         for c in comp["competitors"]:
             abbr = c["team"]["abbreviation"]
             code = _ESPN_TO_CODE.get(abbr)
@@ -73,6 +74,9 @@ def get_live_states() -> dict[frozenset, dict]:
                 teams[code] = int(c.get("score", 0) or 0)
             except (ValueError, TypeError):
                 teams[code] = 0
+            # ESPN flags the winner (incl. extra time / penalties) explicitly.
+            if c.get("winner") is True:
+                winner = code
 
         if len(teams) != 2:
             continue
@@ -97,6 +101,8 @@ def get_live_states() -> dict[frozenset, dict]:
             "status": status_name,
             "in_play": status_name in _IN_PLAY_STATUSES,
             "halftime": status_name == "STATUS_HALFTIME",
+            "final": status_name == "STATUS_FINAL",
+            "winner": winner,
         }
 
     return states

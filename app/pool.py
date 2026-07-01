@@ -18,6 +18,7 @@ from pathlib import Path
 from src.api_client import SportsPredictClient, EVENT_ID
 from src.team_data import get_stats, CODE_TO_NAME, TEAM_STATS, name_to_code
 from src.models import MatchModel
+from src.live_scores import get_live_states
 
 DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
@@ -226,10 +227,34 @@ def get_slate(force: bool = False) -> list[dict]:
         if not matches:
             matches = _demo_matches()
         _slate_cache.update(matches=matches, ts=now, live=live)
+        # Persist team codes for every served match so it can still be shown
+        # live / settled after it leaves the upcoming list at kickoff.
+        _merge_meta({m["id"]: [m["team_a"], m["team_b"]] for m in matches})
 
     for m in _slate_cache["matches"]:
         _seen_teams[m["id"]] = (m["team_a"], m["team_b"])
     return _slate_cache["matches"]
+
+
+def _merge_meta(pairs: dict) -> None:
+    with _LOCK:
+        state = _load()
+        changed = False
+        for mid, codes in pairs.items():
+            if state["match_meta"].get(mid) != list(codes):
+                state["match_meta"][mid] = list(codes)
+                changed = True
+        if changed:
+            _save(state)
+
+
+def _tracked_matches() -> dict:
+    """Every match we know about: current slate + served/picked (persisted)."""
+    get_slate()  # refresh _seen_teams for the current slate
+    tracked = dict(_seen_teams)
+    for mid, codes in _load()["match_meta"].items():
+        tracked.setdefault(mid, tuple(codes))
+    return tracked
 
 
 def build_matches() -> list[dict]:
@@ -251,13 +276,107 @@ def get_match(match_id: str) -> dict | None:
 
 
 # --------------------------------------------------------------------------- #
+# Real match tracking — live scores + settlement from the ESPN scoreboard      #
+# --------------------------------------------------------------------------- #
+_REAL_TTL = 60  # seconds — cache the ESPN scoreboard fetch
+_real_cache = {"states": {}, "ts": 0.0}
+
+
+def _real_states(force: bool = False) -> dict:
+    now = time.time()
+    if force or not _real_cache["states"] or (now - _real_cache["ts"]) >= _REAL_TTL:
+        try:
+            _real_cache["states"] = get_live_states() or _real_cache["states"]
+        except Exception:
+            pass
+        _real_cache["ts"] = now
+    return _real_cache["states"]
+
+
+def _codes_for(match_id: str, meta: dict | None = None):
+    """Team codes for a match, from memory / persisted meta / current slate."""
+    if match_id in _seen_teams:
+        return _seen_teams[match_id]
+    meta = _load()["match_meta"] if meta is None else meta
+    if match_id in meta:
+        return tuple(meta[match_id])
+    m = _index().get(match_id)
+    return (m["team_a"], m["team_b"]) if m else None
+
+
+def _settle_internal(match_id: str, outcome: str) -> None:
+    """Record a real/auto result (no slate validation; trusted caller)."""
+    with _LOCK:
+        state = _load()
+        if match_id not in state["results"]:
+            state["results"][match_id] = outcome
+            _save(state)
+
+
+def sync_real_results() -> None:
+    """Settle any tracked match that has actually finished (real ESPN result)."""
+    states = _real_states()
+    if not states:
+        return
+    results = _load()["results"]
+    for mid, (a, b) in _tracked_matches().items():
+        if mid in results:
+            continue
+        st = states.get(frozenset((a, b)))
+        if not st or not st.get("final"):
+            continue
+        winner = st.get("winner")
+        if not winner:
+            sa, sb = st["scores"].get(a, 0), st["scores"].get(b, 0)
+            if sa == sb:
+                continue  # level, winner not yet reported (shootout pending)
+            winner = a if sa > sb else b
+        _settle_internal(mid, "a" if winner == a else "b")
+
+
+def live_match_state() -> dict:
+    """Real match currently in play (from ESPN) with live model odds, else inactive."""
+    states = _real_states()
+    if not states:
+        return {"active": False}
+    for mid, (a, b) in _tracked_matches().items():
+        st = states.get(frozenset((a, b)))
+        if not st or not st.get("in_play"):
+            continue
+        sa, sb = st["scores"].get(a, 0), st["scores"].get(b, 0)
+        model = MatchModel(get_stats(a), get_stats(b), a, b)
+        model.apply_live(sa, sb, st["minute"])
+        p_a, p_b, p_d = model.p_win("a"), model.p_win("b"), model.p_draw()
+        total = p_a + p_b + p_d or 1.0
+        if KNOCKOUT:
+            qa = knockout_win_prob(p_a, p_b, p_d, a, b)
+            ai = {"a": round(qa / total * 100, 1), "b": round((total - qa) / total * 100, 1)}
+        else:
+            ai = {"a": round(p_a / total * 100, 1),
+                  "draw": round(p_d / total * 100, 1),
+                  "b": round(p_b / total * 100, 1)}
+        return {
+            "active": True, "mode": "live", "match_id": mid,
+            "name_a": team_name(a), "name_b": team_name(b),
+            "minute": st["minute"], "score_a": sa, "score_b": sb,
+            "finished": False, "ai": ai, "goals": [],
+        }
+    return {"active": False}
+
+
+# --------------------------------------------------------------------------- #
 # Persistence                                                                  #
 # --------------------------------------------------------------------------- #
 def _load() -> dict:
     if STORE_PATH.exists():
         with open(STORE_PATH) as f:
-            return json.load(f)
-    return {"picks": {}, "results": {}}
+            state = json.load(f)
+    else:
+        state = {}
+    state.setdefault("picks", {})
+    state.setdefault("results", {})
+    state.setdefault("match_meta", {})  # match_id -> [team_a, team_b], for settling
+    return state
 
 
 def _save(state: dict) -> None:
@@ -275,11 +394,13 @@ def record_pick(user: str, match_id: str, pick: str) -> None:
         raise ValueError("Name required")
     if pick not in OUTCOMES:
         raise ValueError(f"Invalid pick: {pick!r}")
-    if match_id not in _index():
+    match = _index().get(match_id)
+    if match is None:
         raise ValueError(f"Unknown match: {match_id!r}")
     with _LOCK:
         state = _load()
         state["picks"].setdefault(user, {})[match_id] = pick
+        state["match_meta"][match_id] = [match["team_a"], match["team_b"]]
         _save(state)
 
 
@@ -319,9 +440,11 @@ def leaderboard() -> dict:
     Score every human and the AI on the same resolved matches with Brier score.
     Returns {players: [...], resolved_count: int}. Players sorted by avg Brier.
     """
+    sync_real_results()  # pull in any real match results before scoring
     state = _load()
     results = state["results"]
     picks = state["picks"]
+    meta = state["match_meta"]
 
     rows = []
 
@@ -341,12 +464,9 @@ def leaderboard() -> dict:
         })
 
     # The AI, scored on every resolved match using its full probability vector
-    index = _index()
     ai_scored = []
     for mid, outcome in results.items():
-        codes = _seen_teams.get(mid) or (
-            (index[mid]["team_a"], index[mid]["team_b"]) if mid in index else None
-        )
+        codes = _codes_for(mid, meta)
         if not codes:
             continue
         odds = ai_odds(*codes)

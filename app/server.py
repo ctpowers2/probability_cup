@@ -78,9 +78,15 @@ def api_clear_results():
     return {"ok": True}
 
 
-@app.post("/api/live/start")
-def api_live_start(body: LiveStartIn):
-    """Kick off a simulated live match; odds then move in real time."""
+@app.get("/api/live")
+def api_live_state():
+    """The real match currently in play (from the live scoreboard), if any."""
+    return pool.live_match_state()
+
+
+@app.post("/api/sim/start")
+def api_sim_start(body: LiveStartIn):
+    """Kick off a DEMO simulation of a match. Does not affect the leaderboard."""
     try:
         SIM.start(body.match_id, body.speed)
     except ValueError as e:
@@ -88,14 +94,14 @@ def api_live_start(body: LiveStartIn):
     return {"ok": True}
 
 
-@app.post("/api/live/stop")
-def api_live_stop():
+@app.post("/api/sim/stop")
+def api_sim_stop():
     SIM.stop()
     return {"ok": True}
 
 
-@app.get("/api/live")
-def api_live_state():
+@app.get("/api/sim")
+def api_sim_state():
     return SIM.state()
 
 

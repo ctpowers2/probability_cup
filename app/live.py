@@ -89,21 +89,8 @@ class LiveSim:
             odds = {"a": p_a / total, "draw": p_d / total, "b": p_b / total}
 
         finished = minute >= 90
-        # Auto-settle the final result into the pool exactly once.
-        if finished and not self.settled:
-            if sa > sb:
-                outcome = "a"
-            elif sb > sa:
-                outcome = "b"
-            elif pool.KNOCKOUT:
-                # Level after 90' → decided on penalties, weighted by shootout skill.
-                edge = pool.shootout_edge(m["team_a"], m["team_b"])
-                outcome = "a" if float(np.random.random()) < edge else "b"
-            else:
-                outcome = "draw"
-            pool.set_result(self.match_id, outcome)
-            with _LOCK:
-                self.settled = True
+        # The simulator is a DEMO — it never settles the leaderboard. Real
+        # results are pulled from the actual scoreboard by pool.sync_real_results().
 
         # Recent goals for a live event ticker.
         recent = [{"minute": mm, "side": s,
@@ -112,6 +99,7 @@ class LiveSim:
 
         return {
             "active": True,
+            "mode": "sim",
             "match_id": self.match_id,
             "name_a": m["name_a"], "name_b": m["name_b"],
             "minute": minute, "score_a": sa, "score_b": sb,

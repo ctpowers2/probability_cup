@@ -178,6 +178,9 @@
     border: 1px solid rgba(56,189,248,.45); border-radius: 20px; padding: 22px 24px; position: relative;
     box-shadow: 0 0 0 1px rgba(56,189,248,.12), 0 20px 50px rgba(0,0,0,.5);
   }
+  .live-card.sim { border-color: rgba(148,163,184,.4); box-shadow: 0 0 0 1px rgba(148,163,184,.1), 0 20px 50px rgba(0,0,0,.5); }
+  .live-card.sim .live-dot { background: var(--gold); }
+  .live-card.sim .live-label { color: var(--gold); }
   .live-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rose); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
@@ -317,7 +320,7 @@ function renderMatches() {
       <div class="rationale">💡 ${m.ai_rationale}</div>
       <div class="picks">${pickButtons(m, mine)}</div>
       ${res ? `<span class="result-tag">✓ Result: ${outcomeLabel(m, res)}${mine ? (mine===res ? " — you nailed it!" : " — AI/you differ") : ""}</span>` : ""}
-      <button class="golive-btn" data-live="${m.id}">▶ Simulate live</button>
+      <button class="golive-btn" data-live="${m.id}">▶ Simulate (demo)</button>
     `;
     card.querySelectorAll(".pick-btn").forEach(btn => {
       btn.onclick = () => pick(m.id, btn.dataset.o);
@@ -379,7 +382,7 @@ async function loadLeaderboard() {
   el.innerHTML = `<table>
     <thead><tr><th>#</th><th>Player</th><th class="num">Avg Brier ↓</th><th class="num">Correct</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    ${d.resolved_count === 0 ? `<p class="hint">Settle a match in demo controls to score the board.</p>` : ""}`;
+    ${d.resolved_count === 0 ? `<p class="hint">Standings update automatically as real matches finish.</p>` : ""}`;
 }
 
 function renderDemoControls() {
@@ -418,34 +421,65 @@ document.getElementById("name").addEventListener("input", () => {
   loadLeaderboard();
 });
 
-// ---- Live match ----
-let LIVE_TIMER = null;
+// ---- Live panel: real in-play matches by default, simulator as a labeled demo ----
+let SIM_ACTIVE = false;
+let LAST_LIVE_ID = null;
 
-async function goLive(matchId) {
-  await api("/api/live/start", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ match_id: matchId, speed: 1.5 }),
-  });
-  toast("Kickoff! 🔴");
-  document.getElementById("live-panel").scrollIntoView({ behavior: "smooth", block: "start" });
-  if (LIVE_TIMER) clearInterval(LIVE_TIMER);
-  pollLive();
-  LIVE_TIMER = setInterval(pollLive, 1000);
+async function refreshScores() {
+  await loadMyPicks();
+  await loadLeaderboard();
 }
 
-async function pollLive() {
-  let s;
-  try { s = await api("/api/live"); } catch { return; }
-  const panel = document.getElementById("live-panel");
-  if (!s.active) { panel.classList.remove("on"); panel.innerHTML = ""; return; }
+async function goLive(matchId) {
+  // Start a DEMO simulation — this never affects the leaderboard.
+  try {
+    await api("/api/sim/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ match_id: matchId, speed: 1.5 }),
+    });
+  } catch (e) { toast(e.message); return; }
+  SIM_ACTIVE = true;
+  toast("Simulating (demo) ▶");
+  document.getElementById("live-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  tickLive();
+}
 
+async function tickLive() {
+  let s = null;
+  if (SIM_ACTIVE) {
+    s = await api("/api/sim").catch(() => ({ active: false }));
+    if (!s.active) SIM_ACTIVE = false;   // sim stopped or expired
+  }
+  if (!SIM_ACTIVE) {
+    s = await api("/api/live").catch(() => ({ active: false }));   // real in-play match
+    const id = s && s.active ? s.match_id : null;
+    if (id !== LAST_LIVE_ID) { LAST_LIVE_ID = id; refreshScores(); }  // a real match started/ended
+  }
+  renderLivePanel(s);
+}
+
+function renderLivePanel(s) {
+  const panel = document.getElementById("live-panel");
+  if (!s || !s.active) { panel.classList.remove("on"); panel.innerHTML = ""; return; }
   panel.classList.add("on");
-  const goals = s.goals.map(g => `<span class="goal-chip">⚽ ${g.minute}' ${g.team}</span>`).join("");
+
+  const sim = s.mode === "sim";
+  const label = (s.finished ? "Full time" : (sim ? "Simulation" : "Live")) + (sim ? " · demo" : "");
+  const note = sim
+    ? "🤖 AI win probability — demo simulation, does not affect the leaderboard"
+    : "🤖 AI win probability — real match, updating live";
+  const goals = (s.goals || []).map(g => `<span class="goal-chip">⚽ ${g.minute}' ${g.team}</span>`).join("");
+  const ticker = sim ? `<div class="live-ticker">${goals || '<span class="goal-chip">No goals yet</span>'}</div>` : "";
+  const footer = s.finished
+    ? (sim ? `<div class="live-final" style="color:var(--muted-dim)">Simulation complete — not scored</div>`
+           : `<div class="live-final">✓ Full time — leaderboard updated</div>`)
+    : "";
+
   panel.innerHTML = `
-    <div class="live-card">
+    <div class="live-card${sim ? ' sim' : ''}">
       <div class="live-head">
         <span class="live-dot"></span>
-        <span class="live-label">${s.finished ? "Full time" : "Live"}</span>
+        <span class="live-label">${label}</span>
         <span class="live-clock">${s.minute}'</span>
       </div>
       <div class="live-score">
@@ -453,18 +487,14 @@ async function pollLive() {
         <span class="sc">${s.score_a} – ${s.score_b}</span>
         <span class="tn">${s.name_b}</span>
       </div>
-      <div class="live-odds-note">🤖 AI win probability — updating live as the match unfolds</div>
+      <div class="live-odds-note">${note}</div>
       <div class="oddsbar">${oddsBar(s.ai)}</div>
       <div class="oddslabels">${oddsLabels(s)}</div>
-      <div class="live-ticker">${goals || '<span class="goal-chip">No goals yet</span>'}</div>
-      ${s.finished ? `<div class="live-final">✓ Full time — result locked into the leaderboard</div>` : ""}
+      ${ticker}
+      ${footer}
     </div>`;
 
-  if (s.finished) {
-    clearInterval(LIVE_TIMER); LIVE_TIMER = null;
-    await loadMyPicks();
-    loadLeaderboard();
-  }
+  if (s.finished && sim) SIM_ACTIVE = false;   // next tick resumes real matches
 }
 
 // Boot
@@ -477,9 +507,9 @@ async function pollLive() {
   await loadMatches();
   await loadMyPicks();
   await loadLeaderboard();
-  // Reattach to an in-progress live match if one exists.
-  const s = await api("/api/live").catch(() => ({ active: false }));
-  if (s.active && !s.finished) { pollLive(); LIVE_TIMER = setInterval(pollLive, 1000); }
+  tickLive();                                  // show any real in-play match now
+  setInterval(tickLive, 2000);                 // live panel refresh
+  setInterval(() => { if (!SIM_ACTIVE) refreshScores(); }, 30000);  // pull real settlements
 })();
 </script>
 </body>
