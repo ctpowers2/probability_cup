@@ -60,6 +60,8 @@ def fetch_odds() -> dict[frozenset, dict]:
         code_home = _name_to_code(home_name)
         code_away = _name_to_code(away_name)
         if not code_home or not code_away:
+            import sys
+            print(f"[odds_api] unmatched: {home_name!r} ({code_home}) vs {away_name!r} ({code_away})", file=sys.stderr)
             continue
 
         key = frozenset({code_home, code_away})
