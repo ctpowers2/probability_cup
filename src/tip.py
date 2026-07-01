@@ -42,6 +42,8 @@ def generate_tip(
     """
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
+        import sys
+        print("[tip] GROQ_API_KEY not set — skipping tip generation", file=sys.stderr)
         return None
 
     try:
@@ -93,5 +95,7 @@ Write exactly 1-2 sentences (max 45 words) explaining what drives the AI's view 
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.choices[0].message.content.strip()
-    except Exception:
+    except Exception as e:
+        import sys
+        print(f"[tip] Groq error for {code_a} vs {code_b}: {e}", file=sys.stderr)
         return None
