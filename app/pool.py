@@ -518,18 +518,16 @@ def clear_results() -> None:
 # --------------------------------------------------------------------------- #
 # Scoring                                                                      #
 # --------------------------------------------------------------------------- #
-def _brier(prob_vec: dict, outcome: str) -> float:
-    """Multi-class Brier score: sum over outcomes of (p - actual)^2. Lower = better."""
-    return sum((prob_vec[o] - (1.0 if o == outcome else 0.0)) ** 2 for o in OUTCOMES)
+def _score(prob_vec: dict, outcome: str) -> int:
+    """
+    Score = (probability assigned to the actual outcome - 0.5) * 100.
 
+    Range: -50 (100% confident on wrong team) to +50 (100% confident on right team).
+    Crossing zero requires giving >50% to the winner, so correct pick = positive,
+    wrong pick = negative, always — regardless of confidence level.
+    """
+    return round((prob_vec[outcome] - 0.5) * 100)
 
-def _brier_to_score(b: float) -> int:
-    """Convert a Brier value to a centered score: 0=breakeven, +50=perfect, -50=max wrong."""
-    return round((1 - b / 2) * 100) - 50
-
-
-def _onehot(pick: str) -> dict:
-    return {o: (1.0 if o == pick else 0.0) for o in OUTCOMES}
 
 
 def _pick_to_vec(entry) -> dict:
@@ -579,7 +577,7 @@ def leaderboard() -> dict:
         breakdown = []
         for mid, p in scored:
             outcome = results[mid]
-            b = _brier(_pick_to_vec(p), outcome)
+            sc = _score(_pick_to_vec(p), outcome)
             chosen = _pick_choice(p)
             conf = p["conf"] if isinstance(p, dict) else 1.0
             codes = meta.get(mid, [None, None])
@@ -588,7 +586,7 @@ def leaderboard() -> dict:
                 "pick": team_name(codes[0] if chosen == "a" else codes[1]) if codes[0] else chosen,
                 "conf": round(conf * 100),
                 "correct": chosen == outcome,
-                "score": _brier_to_score(b),
+                "score": sc,
             })
         correct = sum(1 for bd in breakdown if bd["correct"])
         rows.append({
@@ -606,15 +604,15 @@ def leaderboard() -> dict:
         if not codes:
             continue
         odds = ai_odds(*codes)
-        b = _brier(odds, outcome)
+        sc = _score(odds, outcome)
         correct = max(OUTCOMES, key=lambda o: odds[o]) == outcome
-        ai_scored.append(_brier_to_score(b))
+        ai_scored.append(sc)
         ai_breakdown.append({
             "match": _match_label(mid, meta),
             "pick": f"{team_name(codes[0])} {round(odds['a']*100)}% / {team_name(codes[1])} {round(odds['b']*100)}%",
             "conf": None,
             "correct": correct,
-            "score": _brier_to_score(b),
+            "score": sc,
         })
     if ai_scored:
         rows.append({
@@ -639,15 +637,15 @@ def leaderboard() -> dict:
             bm_probs = {"a": bm["a"] / 100, "b": bm["b"] / 100}
         else:
             bm_probs = {"a": bm["b"] / 100, "b": bm["a"] / 100}
-        b = _brier(bm_probs, outcome)
+        sc = _score(bm_probs, outcome)
         correct = max(bm_probs, key=bm_probs.get) == outcome
-        bm_scored.append(_brier_to_score(b))
+        bm_scored.append(sc)
         bm_breakdown.append({
             "match": _match_label(mid, meta),
             "pick": f"{team_name(codes[0])} {round(bm_probs['a']*100)}% / {team_name(codes[1])} {round(bm_probs['b']*100)}%",
             "conf": None,
             "correct": correct,
-            "score": _brier_to_score(b),
+            "score": sc,
         })
     if bm_scored:
         rows.append({

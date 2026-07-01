@@ -621,9 +621,8 @@ function projectedScoreLine(s) {
   const rest = (1 - conf) / others.length;
   const vec = Object.fromEntries(outcomes.map(o => [o, o === pick ? conf : rest]));
 
-  // Brier score for this projected outcome
-  const brier = outcomes.reduce((sum, o) => sum + (vec[o] - (o === projected ? 1 : 0)) ** 2, 0);
-  const score = Math.round((1 - brier / 2) * 100) - 50;
+  // Score = (prob assigned to actual outcome - 0.5) * 100
+  const score = Math.round((vec[projected] - 0.5) * 100);
   const scoreStr = (score > 0 ? "+" : "") + score;
 
   const correct = pick === projected;
