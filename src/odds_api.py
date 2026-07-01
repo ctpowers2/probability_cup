@@ -14,9 +14,6 @@ from .team_data import NAME_TO_CODE
 _API = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds"
 _TIMEOUT = 8
 
-# Bookmakers tried in priority order; first one with h2h prices wins
-_BOOKS = ["draftkings", "fanduel", "betmgm", "williamhill_us", "betway", "pinnacle"]
-
 
 def _name_to_code(name: str) -> str | None:
     return NAME_TO_CODE.get(name.lower().strip())
@@ -32,7 +29,7 @@ def fetch_odds() -> dict[frozenset, dict]:
             "b": float,      # vig-removed % for code_b (away)
             "code_a": str,   # home team code
             "code_b": str,   # away team code
-            "book": str,     # bookmaker key used
+            "n_books": int,  # number of books averaged
         }}
 
     Returns empty dict if ODDS_API_KEY is not set or on any network error.
@@ -41,12 +38,12 @@ def fetch_odds() -> dict[frozenset, dict]:
     if not api_key:
         return {}
 
+    # No bookmakers filter — take all regions/books so every match gets coverage
     params = {
         "apiKey": api_key,
-        "regions": "us,uk,eu",
+        "regions": "us,uk,eu,au",
         "markets": "h2h",
         "oddsFormat": "decimal",
-        "bookmakers": ",".join(_BOOKS),
     }
     try:
         r = requests.get(_API, params=params, timeout=_TIMEOUT)
@@ -69,10 +66,8 @@ def fetch_odds() -> dict[frozenset, dict]:
         if key in results:
             continue
 
-        # Collect vig-removed implied probs from ALL bookmakers, then average
         home_samples: list[float] = []
         away_samples: list[float] = []
-        books_used: list[str] = []
 
         for bm in event.get("bookmakers", []):
             for market in bm.get("markets", []):
@@ -86,7 +81,6 @@ def fetch_odds() -> dict[frozenset, dict]:
                     total = raw_h + raw_a
                     home_samples.append(raw_h / total)
                     away_samples.append(raw_a / total)
-                    books_used.append(bm.get("key", ""))
                 break
 
         if not home_samples:
@@ -94,15 +88,12 @@ def fetch_odds() -> dict[frozenset, dict]:
 
         avg_h = sum(home_samples) / len(home_samples)
         avg_a = sum(away_samples) / len(away_samples)
-        # pick most recognisable book name for the label
-        book_label = next((b for b in _BOOKS if b in books_used), books_used[0])
 
         results[key] = {
             "a": round(avg_h * 100, 1),
             "b": round(avg_a * 100, 1),
             "code_a": code_home,
             "code_b": code_away,
-            "book": book_label,
             "n_books": len(home_samples),
         }
 
