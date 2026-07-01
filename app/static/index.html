@@ -707,7 +707,13 @@ function renderLivePanel(s) {
   tickLive();                                  // show any real in-play match now
   setInterval(tickLive, 2000);                 // live panel refresh
   setInterval(() => { if (!SIM_ACTIVE) refreshScores(); }, 30000);  // pull real settlements
-  setInterval(() => renderMatches(), 30000);                        // refresh countdown badges
+  setInterval(async () => { await loadMatches(); renderMatches(); }, 30000); // refresh countdowns + tips
+  // Poll every 4s until all tips have loaded (tips are generated async on first request)
+  const tipPoller = setInterval(async () => {
+    await loadMatches();
+    renderMatches();
+    if (MATCHES.every(m => !m.crowd || m.crowd.a == null || m.ai_tip != null)) clearInterval(tipPoller);
+  }, 4000);
 })();
 </script>
 </body>
