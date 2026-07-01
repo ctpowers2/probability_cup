@@ -129,6 +129,16 @@
   .pick-btn.sel-a { background: linear-gradient(135deg, var(--cyan), var(--primary)); color: #04121f; border-color: transparent; box-shadow: 0 4px 16px rgba(56,189,248,.35); }
   .pick-btn.sel-draw { background: #58627f; color: #fff; border-color: transparent; }
   .pick-btn.sel-b { background: linear-gradient(135deg, #f43f5e, var(--rose)); color: #2a0410; border-color: transparent; box-shadow: 0 4px 16px rgba(251,113,133,.3); }
+
+  .conf-row {
+    margin-top: 12px; display: none; align-items: center; gap: 10px;
+    font-size: 12px; color: var(--muted);
+  }
+  .conf-row.on { display: flex; }
+  .conf-row input[type=range] {
+    flex: 1; accent-color: var(--cyan); height: 4px; cursor: pointer;
+  }
+  .conf-val { font-family: var(--font-mono); font-weight: 700; color: var(--text); min-width: 32px; text-align: right; }
   .ai-tag {
     position: absolute; top: 18px; right: 18px; font-size: 11px; color: var(--cyan);
     background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.28); padding: 3px 10px; border-radius: 20px;
@@ -241,7 +251,7 @@
   <div class="section-head">
     <div class="eyebrow">The scoreboard</div>
     <h2>Humans vs. the Machine</h2>
-    <p class="hint">Everyone is scored by <b>Brier score</b> (lower is sharper). The AI hedges with probabilities; you commit to a pick.</p>
+    <p class="hint">Everyone is scored by <b>Brier score</b> — displayed as a 0–100 accuracy score (higher is better). Pick a team, then drag the slider to set your confidence. The AI hedges with full probability distributions.</p>
   </div>
   <div id="leaderboard"></div>
 
@@ -257,8 +267,10 @@
 <script>
 const OUT = { a: "a", draw: "draw", b: "b" };
 let MATCHES = [];
-let MY_PICKS = {};
+let MY_PICKS = {};   // match_id -> "a"|"draw"|"b"
+let MY_CONFS = {};   // match_id -> 0.51..0.99
 let RESULTS = {};
+let _confTimers = {};
 
 function name() { return document.getElementById("name").value.trim(); }
 
@@ -303,10 +315,12 @@ function renderMatches() {
   el.innerHTML = "";
   for (const m of MATCHES) {
     const mine = MY_PICKS[m.id];
+    const conf = MY_CONFS[m.id] || 0.65;
     const res = RESULTS[m.id];
     const favLabel = outcomeLabel(m, m.ai_favorite);
     const card = document.createElement("div");
     card.className = "card";
+    const confPct = Math.round(conf * 100);
     card.innerHTML = `
       <div class="ai-tag">🤖 AI favors ${favLabel}</div>
       <div class="when">${m.when}</div>
@@ -319,27 +333,50 @@ function renderMatches() {
       <div class="oddslabels">${oddsLabels(m)}</div>
       <div class="rationale">💡 ${m.ai_rationale}</div>
       <div class="picks">${pickButtons(m, mine)}</div>
-      ${res ? `<span class="result-tag">✓ Result: ${outcomeLabel(m, res)}${mine ? (mine===res ? " — you nailed it!" : " — AI/you differ") : ""}</span>` : ""}
+      <div class="conf-row${mine ? ' on' : ''}" id="conf-${m.id}">
+        <span>Confidence</span>
+        <input type="range" min="51" max="99" value="${confPct}" id="slider-${m.id}" />
+        <span class="conf-val" id="confval-${m.id}">${confPct}%</span>
+      </div>
+      ${res ? `<span class="result-tag">✓ Result: ${outcomeLabel(m, res)}${mine ? (mine===res ? " — you nailed it!" : " — different pick") : ""}</span>` : ""}
       <button class="golive-btn" data-live="${m.id}">▶ Simulate (demo)</button>
     `;
     card.querySelectorAll(".pick-btn").forEach(btn => {
       btn.onclick = () => pick(m.id, btn.dataset.o);
     });
+    const slider = card.querySelector(`#slider-${m.id}`);
+    slider.oninput = () => {
+      const v = parseInt(slider.value);
+      card.querySelector(`#confval-${m.id}`).textContent = v + "%";
+      clearTimeout(_confTimers[m.id]);
+      _confTimers[m.id] = setTimeout(() => {
+        if (MY_PICKS[m.id]) {
+          MY_CONFS[m.id] = v / 100;
+          submitPick(m.id, MY_PICKS[m.id], v / 100);
+        }
+      }, 300);
+    };
     card.querySelector(".golive-btn").onclick = () => goLive(m.id);
     el.appendChild(card);
   }
 }
 
+async function submitPick(matchId, outcome, conf) {
+  const body = { user: name(), match_id: matchId, pick: outcome, conf: conf || null };
+  await api("/api/pick", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  loadLeaderboard();
+}
+
 async function pick(matchId, outcome) {
   if (!name()) { toast("Enter your name first"); document.getElementById("name").focus(); return; }
   try {
-    await api("/api/pick", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: name(), match_id: matchId, pick: outcome }),
-    });
+    const conf = MY_CONFS[matchId] || 0.65;
+    await submitPick(matchId, outcome, conf);
     MY_PICKS[matchId] = outcome;
+    // Show the confidence slider and set its value
+    const row = document.getElementById(`conf-${matchId}`);
+    if (row) row.classList.add("on");
     renderMatches();
-    loadLeaderboard();
   } catch (e) { toast(e.message); }
 }
 
@@ -355,9 +392,19 @@ async function loadMatches() {
 }
 
 async function loadMyPicks() {
-  if (!name()) { MY_PICKS = {}; renderMatches(); return; }
+  if (!name()) { MY_PICKS = {}; MY_CONFS = {}; renderMatches(); return; }
   const d = await api("/api/picks/" + encodeURIComponent(name()));
-  MY_PICKS = d.picks || {};
+  const raw = d.picks || {};
+  MY_PICKS = {};
+  MY_CONFS = {};
+  for (const [mid, entry] of Object.entries(raw)) {
+    if (typeof entry === "string") {
+      MY_PICKS[mid] = entry;
+    } else {
+      MY_PICKS[mid] = entry.pick;
+      MY_CONFS[mid] = entry.conf;
+    }
+  }
   RESULTS = d.results || {};
   renderMatches();
 }
@@ -372,7 +419,7 @@ async function loadLeaderboard() {
   const rows = d.players.map((p, i) => {
     const cls = [p.is_ai ? "ai-row" : "", (!p.is_ai && p.name === name()) ? "me" : ""].join(" ").trim();
     const rank = p.avg_brier === null ? "—" : (i + 1);
-    const brier = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : p.avg_brier.toFixed(3);
+    const brier = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : Math.round((1 - p.avg_brier / 2) * 100);
     const acc = p.total ? `${p.correct}/${p.total}` : "—";
     return `<tr class="${cls}">
       <td>${rank}</td><td>${p.name}</td>
@@ -380,7 +427,7 @@ async function loadLeaderboard() {
     </tr>`;
   }).join("");
   el.innerHTML = `<table>
-    <thead><tr><th>#</th><th>Player</th><th class="num">Avg Brier ↓</th><th class="num">Correct</th></tr></thead>
+    <thead><tr><th>#</th><th>Player</th><th class="num">Score ↑</th><th class="num">Correct</th></tr></thead>
     <tbody>${rows}</tbody></table>
     ${d.resolved_count === 0 ? `<p class="hint">Standings update automatically as real matches finish.</p>` : ""}`;
 }

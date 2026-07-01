@@ -25,6 +25,7 @@ class PickIn(BaseModel):
     user: str
     match_id: str
     pick: str  # "a" | "draw" | "b"
+    conf: float | None = None  # optional confidence in [0.51, 0.99]
 
 
 class ResultIn(BaseModel):
@@ -51,7 +52,7 @@ def api_user_picks(user: str):
 @app.post("/api/pick")
 def api_pick(body: PickIn):
     try:
-        pool.record_pick(body.user, body.match_id, body.pick)
+        pool.record_pick(body.user, body.match_id, body.pick, body.conf)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}

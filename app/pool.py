@@ -387,8 +387,12 @@ def _save(state: dict) -> None:
     os.replace(tmp, STORE_PATH)
 
 
-def record_pick(user: str, match_id: str, pick: str) -> None:
-    """Store (or overwrite) a user's pick for a match. pick ∈ {a, draw, b}."""
+def record_pick(user: str, match_id: str, pick: str, conf: float | None = None) -> None:
+    """Store (or overwrite) a user's pick for a match.
+
+    pick ∈ OUTCOMES; conf is optional confidence in [0.51, 0.99].
+    Stored as {"pick": "a", "conf": 0.75} or plain "a" for full confidence.
+    """
     user = user.strip()
     if not user:
         raise ValueError("Name required")
@@ -397,9 +401,14 @@ def record_pick(user: str, match_id: str, pick: str) -> None:
     match = _index().get(match_id)
     if match is None:
         raise ValueError(f"Unknown match: {match_id!r}")
+    if conf is None:
+        entry = pick
+    else:
+        conf = max(0.51, min(0.99, float(conf)))
+        entry = {"pick": pick, "conf": conf}
     with _LOCK:
         state = _load()
-        state["picks"].setdefault(user, {})[match_id] = pick
+        state["picks"].setdefault(user, {})[match_id] = entry
         state["match_meta"][match_id] = [match["team_a"], match["team_b"]]
         _save(state)
 
@@ -435,6 +444,22 @@ def _onehot(pick: str) -> dict:
     return {o: (1.0 if o == pick else 0.0) for o in OUTCOMES}
 
 
+def _pick_to_vec(entry) -> dict:
+    """Convert a stored pick entry (str or {pick, conf}) to a probability vector."""
+    if isinstance(entry, dict):
+        chosen, conf = entry["pick"], entry["conf"]
+    else:
+        chosen, conf = entry, 1.0
+    others = [o for o in OUTCOMES if o != chosen]
+    rest = (1.0 - conf) / len(others) if others else 0.0
+    return {o: (conf if o == chosen else rest) for o in OUTCOMES}
+
+
+def _pick_choice(entry) -> str:
+    """The chosen outcome from a stored pick entry."""
+    return entry["pick"] if isinstance(entry, dict) else entry
+
+
 def leaderboard() -> dict:
     """
     Score every human and the AI on the same resolved matches with Brier score.
@@ -455,8 +480,8 @@ def leaderboard() -> dict:
             rows.append({"name": user, "is_ai": False, "picks": 0,
                          "avg_brier": None, "correct": 0, "total": 0})
             continue
-        briers = [_brier(_onehot(p), results[mid]) for mid, p in scored]
-        correct = sum(1 for mid, p in scored if p == results[mid])
+        briers = [_brier(_pick_to_vec(p), results[mid]) for mid, p in scored]
+        correct = sum(1 for mid, p in scored if _pick_choice(p) == results[mid])
         rows.append({
             "name": user, "is_ai": False, "picks": len(scored),
             "avg_brier": round(sum(briers) / len(briers), 4),
