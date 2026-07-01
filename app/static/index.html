@@ -114,12 +114,12 @@
 
   .crowd-row { margin-top: 10px; }
   .crowd-label { font-size: 11px; font-family: var(--font-mono); letter-spacing: 1px;
-    text-transform: uppercase; color: var(--amber); margin-bottom: 5px; }
-  .oddsbar.crowd .seg-a { background: linear-gradient(90deg, var(--gold), var(--amber)); }
-  .oddsbar.crowd .seg-b { background: linear-gradient(90deg, #c2410c, #f97316); }
+    text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .oddsbar.crowd .seg-a { background: linear-gradient(90deg, #6366f1, #818cf8); }
+  .oddsbar.crowd .seg-b { background: linear-gradient(90deg, #475569, #64748b); }
   .crowd-sublabels { display: flex; justify-content: space-between; font-size: 11.5px;
     color: var(--muted-dim); margin-top: 4px; }
-  .crowd-sublabels b { color: var(--amber); font-family: var(--font-mono); }
+  .crowd-sublabels b { color: #a5b4fc; font-family: var(--font-mono); }
   .oddslabels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
   .oddslabels b { color: #fff; font-family: var(--font-mono); font-weight: 700; }
   .rationale {
@@ -189,6 +189,8 @@
   #leaderboard tr:last-child td { border-bottom: none; }
   #leaderboard tr.ai-row { background: linear-gradient(90deg, rgba(245,158,11,.12), transparent); }
   #leaderboard tr.ai-row td { font-weight: 600; }
+  #leaderboard tr.public-row { background: linear-gradient(90deg, rgba(99,102,241,.12), transparent); }
+  #leaderboard tr.public-row td { font-weight: 600; }
   #leaderboard tr.me td:nth-child(2)::after { content: "YOU"; font-family: var(--font-mono); font-size: 10px;
     margin-left: 8px; color: var(--cyan); border: 1px solid rgba(56,189,248,.4); padding: 1px 6px; border-radius: 20px; }
   #leaderboard .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
@@ -330,10 +332,8 @@ function oddsBar(ai) {
 function crowdSection(m) {
   const c = m.crowd;
   if (!c || c.a == null) return "";
-  const n = c.n_books || 1;
-  const bookLabel = n > 1 ? `avg ${n} books` : (c.book ? c.book.replace(/_us$/, "").replace(/_/g, " ") : "bookmakers");
   return `<div class="crowd-row">
-    <div class="crowd-label">📊 Public line (${bookLabel})</div>
+    <div class="crowd-label">📊 Public line</div>
     <div class="oddsbar crowd"><div class="seg-a" style="width:${c.a}%"></div><div class="seg-b" style="width:${c.b}%"></div></div>
     <div class="crowd-sublabels"><span><b>${c.a}%</b> ${m.name_a}</span><span>${m.name_b} <b>${c.b}%</b></span></div>
   </div>`;
@@ -499,7 +499,8 @@ async function loadLeaderboard() {
     return;
   }
   const rows = d.players.map((p, i) => {
-    const cls = [p.is_ai ? "ai-row" : "", (!p.is_ai && p.name === name()) ? "me" : ""].join(" ").trim();
+    const isPublicLine = p.name === "📊 Public line";
+    const cls = [p.is_ai ? (isPublicLine ? "public-row" : "ai-row") : "", (!p.is_ai && p.name === name()) ? "me" : ""].join(" ").trim();
     const rank = p.avg_brier === null ? "—" : (i + 1);
     const score = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : Math.round((1 - p.avg_brier / 2) * 100);
     const acc = p.total ? `${p.correct}/${p.total}` : "—";

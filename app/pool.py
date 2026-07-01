@@ -607,7 +607,6 @@ def leaderboard() -> dict:
         b = _brier(odds, outcome)
         correct = max(OUTCOMES, key=lambda o: odds[o]) == outcome
         ai_scored.append((b, correct))
-        outcome_name = team_name(codes[0] if outcome == "a" else codes[1])
         ai_breakdown.append({
             "match": _match_label(mid, meta),
             "pick": f"{team_name(codes[0])} {round(odds['a']*100)}% / {team_name(codes[1])} {round(odds['b']*100)}%",
@@ -621,6 +620,39 @@ def leaderboard() -> dict:
             "avg_brier": round(sum(b for b, _ in ai_scored) / len(ai_scored), 4),
             "correct": sum(1 for _, c in ai_scored if c), "total": len(ai_scored),
             "breakdown": sorted(ai_breakdown, key=lambda x: x["match"]),
+        })
+
+    # Public line (bookmaker odds), scored on every resolved match
+    bm_odds_snapshot = _get_bookmaker_odds()
+    bm_scored = []
+    bm_breakdown = []
+    for mid, outcome in results.items():
+        codes = _codes_for(mid, meta)
+        if not codes:
+            continue
+        bm = bm_odds_snapshot.get(frozenset(codes))
+        if not bm:
+            continue
+        if bm.get("code_a") == codes[0]:
+            bm_probs = {"a": bm["a"] / 100, "b": bm["b"] / 100}
+        else:
+            bm_probs = {"a": bm["b"] / 100, "b": bm["a"] / 100}
+        b = _brier(bm_probs, outcome)
+        correct = max(bm_probs, key=bm_probs.get) == outcome
+        bm_scored.append((b, correct))
+        bm_breakdown.append({
+            "match": _match_label(mid, meta),
+            "pick": f"{team_name(codes[0])} {round(bm_probs['a']*100)}% / {team_name(codes[1])} {round(bm_probs['b']*100)}%",
+            "conf": None,
+            "correct": correct,
+            "score": round((1 - b / 2) * 100),
+        })
+    if bm_scored:
+        rows.append({
+            "name": "📊 Public line", "is_ai": True, "picks": len(bm_scored),
+            "avg_brier": round(sum(b for b, _ in bm_scored) / len(bm_scored), 4),
+            "correct": sum(1 for _, c in bm_scored if c), "total": len(bm_scored),
+            "breakdown": sorted(bm_breakdown, key=lambda x: x["match"]),
         })
 
     # Sort: scored players by avg Brier (asc); unscored players last.
