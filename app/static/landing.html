@@ -228,17 +228,17 @@
       <p class="lede">
         Probability Cup pits your gut against a statistical AI. Call every World Cup
         match, watch the model post live odds that shift with each goal, and find out
-        if you can beat its Brier score.
+        if you can outscore it on the leaderboard.
       </p>
       <div class="hero-cta">
         <a class="btn btn-primary btn-lg" href="/play">Start predicting</a>
         <a class="btn btn-ghost btn-lg" href="#how">See how it works</a>
       </div>
       <div class="trust">
-        <div class="item"><div class="n">48</div><div class="l">nations modeled</div></div>
+        <div class="item"><div class="n">±50</div><div class="l">pts per match</div></div>
         <div class="item"><div class="n">104</div><div class="l">matches</div></div>
         <div class="item"><div class="n">live</div><div class="l">in-play odds</div></div>
-        <div class="item"><div class="n">Brier</div><div class="l">scored fairly</div></div>
+        <div class="item"><div class="n">proper</div><div class="l">scoring rule</div></div>
       </div>
     </div>
 
@@ -301,7 +301,7 @@
         <div class="num">STEP 04</div>
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M8 21h8M12 17v4M6 4h12v5a6 6 0 0 1-12 0V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 5h2a2 2 0 0 1-2 4M6 5H4a2 2 0 0 0 2 4" stroke="currentColor" stroke-linecap="round"/></svg></div>
         <h3>Beat the AI</h3>
-        <p>Both you and the model are scored 0–100. The AI hedges with full probability distributions — outsmart it and claim the top spot.</p>
+        <p>Right picks earn positive points, wrong picks lose points (−50 to +50 each). The AI posts full probability distributions — beat it on total score to claim the top spot.</p>
       </div>
     </div>
   </div>
@@ -333,7 +333,7 @@
       <div class="card wide reveal" style="transition-delay:.08s">
         <div class="ic"><svg viewBox="0 0 24 24" stroke-width="1.7"><path d="M3 3v18h18" stroke="currentColor" stroke-linecap="round"/><rect x="7" y="12" width="3" height="6" stroke="currentColor"/><rect x="12" y="8" width="3" height="10" stroke="currentColor"/><rect x="17" y="5" width="3" height="13" stroke="currentColor"/></svg></div>
         <h3>Humans vs. the machine</h3>
-        <p>One leaderboard, one metric. Set your confidence on each pick — higher confidence means bigger rewards and bigger risks. The AI posts full probability distributions; outsmart it to claim the top spot.</p>
+        <p>One leaderboard, one metric. Set your confidence on each pick — higher confidence means bigger rewards and bigger risks. The AI posts full probability distributions; outscore it to claim the top spot.</p>
       </div>
     </div>
   </div>
@@ -344,17 +344,17 @@
     <div class="reveal">
       <div class="eyebrow">The scoreboard</div>
       <h2 class="sec">Can you finish above the AI?</h2>
-      <p class="sec-lede">Scored 0–100 — higher is sharper. The model is tough to beat, but a well-placed confident call can leapfrog it in one match.</p>
+      <p class="sec-lede">Scored −50 to +50 per match — right picks earn, wrong picks cost. A well-placed confident call can leapfrog the AI in a single match.</p>
     </div>
     <div class="board reveal">
       <table>
-        <thead><tr><th>#</th><th>Player</th><th class="num">Score ↑</th><th class="num">Correct</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th class="num">Total ↑</th><th class="num">Correct</th></tr></thead>
         <tbody>
-          <tr class="you"><td class="rank">1</td><td>chase</td><td class="num">91</td><td class="num">7/8</td></tr>
-          <tr class="ai"><td class="rank">2</td><td>🤖 The AI</td><td class="num">87</td><td class="num">7/8</td></tr>
-          <tr><td class="rank">3</td><td>mateo</td><td class="num">82</td><td class="num">6/8</td></tr>
-          <tr><td class="rank">4</td><td>priya</td><td class="num">74</td><td class="num">6/8</td></tr>
-          <tr><td class="rank">5</td><td>sam</td><td class="num">58</td><td class="num">5/8</td></tr>
+          <tr class="you"><td class="rank">1</td><td>chase</td><td class="num">+124</td><td class="num">7/8</td></tr>
+          <tr class="ai"><td class="rank">2</td><td>🤖 The AI</td><td class="num">+98</td><td class="num">7/8</td></tr>
+          <tr><td class="rank">3</td><td>mateo</td><td class="num">+81</td><td class="num">6/8</td></tr>
+          <tr><td class="rank">4</td><td>priya</td><td class="num">+43</td><td class="num">6/8</td></tr>
+          <tr><td class="rank">5</td><td>sam</td><td class="num">−12</td><td class="num">4/8</td></tr>
         </tbody>
       </table>
     </div>
@@ -401,9 +401,9 @@
   if (!reduce) {
     const frames = [
       { min: 45, score: "0 – 0", a: 55, b: 45, why: "💡 Argentina 55% — a 138-point Elo edge; projected 1.6–0.9.", proj: null },
-      { min: 58, score: "1 – 0", a: 78, b: 22, why: "💡 Argentina 78% — a goal up at 58', strong shootout record (0.68).", proj: "✓ If Argentina wins, chase earns 91 on this match" },
+      { min: 58, score: "1 – 0", a: 78, b: 22, why: "💡 Argentina 78% — a goal up at 58', strong shootout record (0.68).", proj: "✓ If Argentina wins, chase earns +35 on this match" },
       { min: 76, score: "1 – 1", a: 56, b: 44, why: "💡 Level at 76' — momentum reset, shootout edge still favors Argentina.", proj: null },
-      { min: 88, score: "2 – 1", a: 94, b: 6,  why: "💡 Argentina 94% — late winner, all but sealed with 2' left.", proj: "✓ If Argentina wins, chase earns 91 on this match" },
+      { min: 88, score: "2 – 1", a: 94, b: 6,  why: "💡 Argentina 94% — late winner, all but sealed with 2' left.", proj: "✓ If Argentina wins, chase earns +38 on this match" },
     ];
     let i = 0;
     const $ = id => document.getElementById(id);

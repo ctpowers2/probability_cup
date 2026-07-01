@@ -287,7 +287,7 @@
   <div class="section-head">
     <div class="eyebrow">The scoreboard</div>
     <h2>Humans vs. the Machine</h2>
-    <p class="hint">Everyone is scored by <b>Brier score</b> — displayed as a 0–100 accuracy score (higher is better). Pick a team, then drag the slider to set your confidence. The AI hedges with full probability distributions.</p>
+    <p class="hint">Everyone is scored by a <b>quadratic proper scoring rule</b> — right picks earn positive points, wrong picks lose points (range −50 to +50 per match). Higher confidence pays more when correct and costs more when wrong. The AI hedges with full probability distributions.</p>
   </div>
   <div id="leaderboard"></div>
 
