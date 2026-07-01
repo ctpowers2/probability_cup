@@ -54,8 +54,10 @@ _ODDS_TTL = 300
 _odds_cache: dict = {"odds": {}, "ts": 0.0}
 _odds_fetching = False
 
-# Tips are generated once per unique matchup and never expire within a session.
+# Tips are generated once per unique matchup. None = not yet generated / failed.
+# Use a separate set to track which keys already have a thread in flight.
 _tip_cache: dict[frozenset, str | None] = {}
+_tip_inflight: set[frozenset] = set()
 
 
 def _get_tip_bg(key: frozenset, code_a: str, code_b: str,
@@ -64,9 +66,12 @@ def _get_tip_bg(key: frozenset, code_a: str, code_b: str,
                 pub_a: float | None, pub_b: float | None) -> None:
     try:
         tip = generate_tip(code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b)
-        _tip_cache[key] = tip
+        if tip:
+            _tip_cache[key] = tip
     except Exception:
-        _tip_cache[key] = None
+        pass
+    finally:
+        _tip_inflight.discard(key)
 
 
 def _get_tip(code_a: str, code_b: str, stats_a: dict, stats_b: dict,
@@ -75,13 +80,14 @@ def _get_tip(code_a: str, code_b: str, stats_a: dict, stats_b: dict,
     key = frozenset({code_a, code_b})
     if key in _tip_cache:
         return _tip_cache[key]
-    # Fire once; return None until the background thread fills the cache
-    _tip_cache[key] = None
-    threading.Thread(
-        target=_get_tip_bg,
-        args=(key, code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b),
-        daemon=True,
-    ).start()
+    # Fire a background thread if none is already running for this matchup
+    if key not in _tip_inflight:
+        _tip_inflight.add(key)
+        threading.Thread(
+            target=_get_tip_bg,
+            args=(key, code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b),
+            daemon=True,
+        ).start()
     return None
 
 
