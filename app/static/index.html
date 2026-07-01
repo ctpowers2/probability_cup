@@ -223,7 +223,7 @@
 
 <div class="wrap">
   <section class="intro">
-    <div class="eyebrow">World Cup 2026 · pick'em pool</div>
+    <div class="eyebrow" id="slate-flag">World Cup 2026 · pick'em pool</div>
     <h1>Make your picks. <span class="grad">Beat the AI.</span></h1>
     <div class="name-bar">
       <input id="name" placeholder="Enter your name to play…" autocomplete="off" />
@@ -335,6 +335,10 @@ async function pick(matchId, outcome) {
 async function loadMatches() {
   const d = await api("/api/matches");
   MATCHES = d.matches;
+  const flag = document.getElementById("slate-flag");
+  if (flag) flag.textContent = d.live
+    ? "World Cup 2026 · live fixtures"
+    : "World Cup 2026 · sample fixtures";
   renderMatches();
   renderDemoControls();
 }
