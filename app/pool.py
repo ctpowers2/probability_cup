@@ -20,7 +20,7 @@ from src.team_data import get_stats, CODE_TO_NAME, TEAM_STATS, name_to_code
 from src.models import MatchModel
 from src.live_scores import get_live_states
 from src.bayesian_updater import get_dynamic_stats
-from src.kalshi import fetch_kalshi_odds
+from src.odds_api import fetch_odds as fetch_bookmaker_odds
 
 DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
@@ -49,31 +49,29 @@ _STATS_TTL = 300  # refresh Bayesian+Elo update at most this often
 _stats_cache: dict = {"stats": dict(TEAM_STATS), "ts": 0.0}
 _stats_fetching = False
 
-_KALSHI_TTL = 300
-_kalshi_cache: dict = {"odds": {}, "ts": 0.0}
-_kalshi_fetching = False
+_ODDS_TTL = 300
+_odds_cache: dict = {"odds": {}, "ts": 0.0}
+_odds_fetching = False
 
 
-def _refresh_kalshi_bg() -> None:
-    """Fetch Kalshi odds in a background thread; never blocks the request cycle."""
-    global _kalshi_fetching
+def _refresh_odds_bg() -> None:
+    global _odds_fetching
     try:
-        odds = fetch_kalshi_odds()
-        _kalshi_cache["odds"] = odds
+        _odds_cache["odds"] = fetch_bookmaker_odds()
     except Exception:
         pass
     finally:
-        _kalshi_cache["ts"] = time.time()
-        _kalshi_fetching = False
+        _odds_cache["ts"] = time.time()
+        _odds_fetching = False
 
 
-def _get_kalshi_odds() -> dict:
-    global _kalshi_fetching
+def _get_bookmaker_odds() -> dict:
+    global _odds_fetching
     now = time.time()
-    if (now - _kalshi_cache["ts"]) >= _KALSHI_TTL and not _kalshi_fetching:
-        _kalshi_fetching = True
-        threading.Thread(target=_refresh_kalshi_bg, daemon=True).start()
-    return _kalshi_cache["odds"]
+    if (now - _odds_cache["ts"]) >= _ODDS_TTL and not _odds_fetching:
+        _odds_fetching = True
+        threading.Thread(target=_refresh_odds_bg, daemon=True).start()
+    return _odds_cache["odds"]
 
 
 def _refresh_stats_bg() -> None:
@@ -215,15 +213,14 @@ def team_name(code: str) -> str:
 def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
     """Assemble one match dict with locally-computed AI odds + rationale."""
     odds = ai_odds(code_a, code_b)
-    kalshi = _get_kalshi_odds().get(frozenset({code_a, code_b}))
+    bm = _get_bookmaker_odds().get(frozenset({code_a, code_b}))
     crowd: dict | None = None
-    if kalshi:
-        # Kalshi entry stores code_a/code_b as the side that was bet on;
-        # re-orient so 'a'/'b' align with our match's code_a/code_b.
-        if kalshi.get("code_a") == code_a:
-            crowd = {"a": kalshi["a"], "b": kalshi["b"], "volume": kalshi["volume"]}
+    if bm:
+        # Re-orient so 'a'/'b' align with our match's code_a/code_b.
+        if bm.get("code_a") == code_a:
+            crowd = {"a": bm["a"], "b": bm["b"], "book": bm.get("book", "")}
         else:
-            crowd = {"a": kalshi["b"], "b": kalshi["a"], "volume": kalshi["volume"]}
+            crowd = {"a": bm["b"], "b": bm["a"], "book": bm.get("book", "")}
     return {
         "id": mid,
         "team_a": code_a,

@@ -330,9 +330,9 @@ function oddsBar(ai) {
 function crowdSection(m) {
   const c = m.crowd;
   if (!c || c.a == null) return "";
-  const vol = c.volume > 0 ? ` · $${Math.round(c.volume).toLocaleString()} vol` : "";
+  const bookLabel = c.book ? c.book.replace(/_us$/, "").replace(/_/g, " ") : "bookmakers";
   return `<div class="crowd-row">
-    <div class="crowd-label">📊 Crowd (Kalshi${vol})</div>
+    <div class="crowd-label">📊 Public line (${bookLabel})</div>
     <div class="oddsbar crowd"><div class="seg-a" style="width:${c.a}%"></div><div class="seg-b" style="width:${c.b}%"></div></div>
     <div class="crowd-sublabels"><span><b>${c.a}%</b> ${m.name_a}</span><span>${m.name_b} <b>${c.b}%</b></span></div>
   </div>`;
