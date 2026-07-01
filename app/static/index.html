@@ -627,10 +627,12 @@ function projectedScoreLine(s) {
   const scoreStr = (score > 0 ? "+" : "") + score;
 
   const correct = pick === projected;
-  const color = correct ? "var(--good)" : "var(--rose)";
+  const color = score > 0 ? "var(--good)" : score < 0 ? "var(--rose)" : "var(--muted)";
   const icon = correct ? "✓" : "✗";
   const outcomeLabel = projected === "a" ? s.name_a : projected === "b" ? s.name_b : "Draw";
-  return `<div class="live-proj" style="color:${color}">${icon} If ${outcomeLabel} wins, you ${correct ? "earn" : "lose"} <b>${scoreStr}</b> on this match</div>`;
+  const verb = score > 0 ? "earn" : score < 0 ? "lose" : "break even with";
+  const absStr = score !== 0 ? ` <b>${score > 0 ? "+" : ""}${score}</b>` : "";
+  return `<div class="live-proj" style="color:${color}">${icon} If ${outcomeLabel} wins, you ${verb}${absStr} on this match</div>`;
 }
 
 function renderLivePanel(s) {
