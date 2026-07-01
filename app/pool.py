@@ -21,6 +21,7 @@ from src.models import MatchModel
 from src.live_scores import get_live_states
 from src.bayesian_updater import get_dynamic_stats
 from src.odds_api import fetch_odds as fetch_bookmaker_odds
+from src.tip import generate_tip
 
 DATA_DIR = Path(__file__).parent / "data"
 STORE_PATH = DATA_DIR / "pool.json"
@@ -52,6 +53,36 @@ _stats_fetching = False
 _ODDS_TTL = 300
 _odds_cache: dict = {"odds": {}, "ts": 0.0}
 _odds_fetching = False
+
+# Tips are generated once per unique matchup and never expire within a session.
+_tip_cache: dict[frozenset, str | None] = {}
+
+
+def _get_tip_bg(key: frozenset, code_a: str, code_b: str,
+                stats_a: dict, stats_b: dict,
+                ai_a: float, ai_b: float,
+                pub_a: float | None, pub_b: float | None) -> None:
+    try:
+        tip = generate_tip(code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b)
+        _tip_cache[key] = tip
+    except Exception:
+        _tip_cache[key] = None
+
+
+def _get_tip(code_a: str, code_b: str, stats_a: dict, stats_b: dict,
+             ai_a: float, ai_b: float,
+             pub_a: float | None, pub_b: float | None) -> str | None:
+    key = frozenset({code_a, code_b})
+    if key in _tip_cache:
+        return _tip_cache[key]
+    # Fire once; return None until the background thread fills the cache
+    _tip_cache[key] = None
+    threading.Thread(
+        target=_get_tip_bg,
+        args=(key, code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b),
+        daemon=True,
+    ).start()
+    return None
 
 
 def _refresh_odds_bg() -> None:
@@ -212,15 +243,23 @@ def team_name(code: str) -> str:
 
 def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
     """Assemble one match dict with locally-computed AI odds + rationale."""
+    stats_a, stats_b = _get_stats(code_a), _get_stats(code_b)
     odds = ai_odds(code_a, code_b)
+    ai_a = round(odds["a"] * 100, 1)
+    ai_b = round(odds["b"] * 100, 1)
+
     bm = _get_bookmaker_odds().get(frozenset({code_a, code_b}))
     crowd: dict | None = None
+    pub_a = pub_b = None
     if bm:
-        # Re-orient so 'a'/'b' align with our match's code_a/code_b.
         if bm.get("code_a") == code_a:
-            crowd = {"a": bm["a"], "b": bm["b"], "n_books": bm.get("n_books", 1)}
+            pub_a, pub_b = bm["a"], bm["b"]
         else:
-            crowd = {"a": bm["b"], "b": bm["a"], "n_books": bm.get("n_books", 1)}
+            pub_a, pub_b = bm["b"], bm["a"]
+        crowd = {"a": pub_a, "b": pub_b, "n_books": bm.get("n_books", 1)}
+
+    tip = _get_tip(code_a, code_b, stats_a, stats_b, ai_a, ai_b, pub_a, pub_b)
+
     return {
         "id": mid,
         "team_a": code_a,
@@ -232,6 +271,7 @@ def _build_match(mid: str, code_a: str, code_b: str, when: str) -> dict:
         "ai_favorite": max(OUTCOMES, key=lambda o: odds[o]),
         "ai_rationale": rationale(code_a, code_b, odds),
         "crowd": crowd,
+        "ai_tip": tip,
     }
 
 

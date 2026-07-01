@@ -333,66 +333,17 @@ function oddsBar(ai) {
   return `<div class="seg-a" style="width:${ai.a}%"></div>${draw}<div class="seg-b" style="width:${ai.b}%"></div>`;
 }
 
-function expertTip(m) {
-  const c = m.crowd;
-  if (!c || c.a == null) return "";
-
-  const aiA = m.ai.a, aiB = m.ai.b;
-  const pubA = c.a, pubB = c.b;
-
-  // Who does each source favour, and by how much?
-  const aiEdge = aiA - aiB;       // positive = AI favours A
-  const pubEdge = pubA - pubB;    // positive = market favours A
-  const gap = aiA - pubA;         // positive = AI is higher on A than market
-  const absGap = Math.abs(gap);
-
-  const favA = aiEdge > 0;
-  const aName = m.name_a, bName = m.name_b;
-  const favName  = favA ? aName : bName;
-  const dogName  = favA ? bName : aName;
-  const aiPct    = favA ? aiA : aiB;
-  const pubPct   = favA ? pubA : pubB;
-  const aiEdgePct  = Math.round(Math.abs(aiEdge));
-  const pubEdgePct = Math.round(Math.abs(pubEdge));
-
-  // Sides agree on who wins
-  const sameDir = (aiEdge > 0) === (pubEdge > 0);
-
-  let tip;
-  if (absGap <= 3) {
-    tip = `The AI and the public are closely aligned — both give <b>${favName}</b> a ~${Math.round(aiPct)}% chance. No obvious edge either way.`;
-  } else if (sameDir) {
-    if (gap > 0) {
-      // AI is higher on A than market — A = favName if aiEdge > 0
-      const aiHigherName = aiEdge > 0 ? aName : bName;
-      const aiHigherPct  = aiEdge > 0 ? aiA : aiB;
-      const pubHigherPct = aiEdge > 0 ? pubA : pubB;
-      tip = `Both sides favour <b>${favName}</b>, but the AI (${Math.round(aiHigherPct)}%) is more confident than the market (${Math.round(pubHigherPct)}%). The model may be overrating ${favName}'s recent form, or the market is pricing in injury/rotation news the model hasn't seen.`;
-    } else {
-      const mktHigherName = aiEdge > 0 ? aName : bName;
-      const aiLowerPct    = aiEdge > 0 ? aiA : aiB;
-      const pubLowerPct   = aiEdge > 0 ? pubA : pubB;
-      tip = `Both sides favour <b>${favName}</b>, but the market (${Math.round(pubLowerPct)}%) is more confident than the AI (${Math.round(aiLowerPct)}%). Bettors may know something the model doesn't — worth checking for team news before picking.`;
-    }
-  } else {
-    // Disagree on winner entirely
-    const mktFavName = pubEdge > 0 ? aName : bName;
-    const mktFavPct  = pubEdge > 0 ? pubA : pubB;
-    const aiFavPct   = favA ? aiA : aiB;
-    tip = `The AI and the market disagree: the AI favours <b>${favName}</b> (${Math.round(aiFavPct)}%) while the public favours <b>${mktFavName}</b> (${Math.round(mktFavPct)}%). High-variance pick — if you trust the model, ${favName} may represent value.`;
-  }
-
-  return `<div class="expert-tip">💡 ${tip}</div>`;
-}
-
 function crowdSection(m) {
   const c = m.crowd;
   if (!c || c.a == null) return "";
+  const tip = m.ai_tip
+    ? `<div class="expert-tip">💡 ${m.ai_tip}</div>`
+    : `<div class="expert-tip expert-tip-loading">💡 <span style="color:var(--muted)">Analysing matchup…</span></div>`;
   return `<div class="crowd-row">
     <div class="crowd-label">📊 Public line</div>
     <div class="oddsbar crowd"><div class="seg-a" style="width:${c.a}%"></div><div class="seg-b" style="width:${c.b}%"></div></div>
     <div class="crowd-sublabels"><span><b>${c.a}%</b> ${m.name_a}</span><span>${m.name_b} <b>${c.b}%</b></span></div>
-    ${expertTip(m)}
+    ${tip}
   </div>`;
 }
 
