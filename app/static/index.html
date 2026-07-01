@@ -139,6 +139,26 @@
     flex: 1; accent-color: var(--cyan); height: 4px; cursor: pointer;
   }
   .conf-val { font-family: var(--font-mono); font-weight: 700; color: var(--text); min-width: 32px; text-align: right; }
+
+  .lock-badge {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
+    font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .5px;
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .lock-badge.open { color: var(--good); background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.25); }
+  .lock-badge.soon { color: var(--amber); background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.25); }
+  .lock-badge.locked { color: var(--muted); background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+
+  .breakdown-toggle { width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 12.5px; padding: 8px 0 2px; font-family: var(--font-body); }
+  .breakdown-toggle:hover { color: var(--text); }
+  .breakdown-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .breakdown-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  .breakdown-table tr:last-child td { border-bottom: none; }
+  .breakdown-table .bd-match { color: var(--muted); }
+  .breakdown-table .bd-score { font-family: var(--font-mono); font-weight: 700; text-align: right; }
+  .breakdown-table .bd-score.good { color: var(--good); }
+  .breakdown-table .bd-score.bad { color: var(--rose); }
   .ai-tag {
     position: absolute; top: 18px; right: 18px; font-size: 11px; color: var(--cyan);
     background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.28); padding: 3px 10px; border-radius: 20px;
@@ -311,6 +331,20 @@ function pickButtons(m, mine) {
   return btns.join("");
 }
 
+function isLocked(m) {
+  return m.kickoff_ts != null && (Date.now() / 1000) >= m.kickoff_ts;
+}
+
+function lockBadge(m) {
+  if (m.kickoff_ts == null) return ""; // demo — no locking
+  const secsLeft = m.kickoff_ts - Date.now() / 1000;
+  if (secsLeft <= 0) return `<span class="lock-badge locked">🔒 Locked</span>`;
+  const h = Math.floor(secsLeft / 3600), mins = Math.floor((secsLeft % 3600) / 60);
+  const label = h > 0 ? `${h}h ${mins}m` : `${mins}m`;
+  const cls = secsLeft < 3600 ? "soon" : "open";
+  return `<span class="lock-badge ${cls}">🕐 Locks in ${label}</span>`;
+}
+
 function renderMatches() {
   const el = document.getElementById("matches");
   el.innerHTML = "";
@@ -322,6 +356,7 @@ function renderMatches() {
     const card = document.createElement("div");
     card.className = "card";
     const confPct = Math.round(conf * 100);
+    const locked = isLocked(m);
     card.innerHTML = `
       <div class="ai-tag">🤖 AI favors ${favLabel}</div>
       <div class="when">${m.when}</div>
@@ -333,20 +368,23 @@ function renderMatches() {
       <div class="oddsbar">${oddsBar(m.ai)}</div>
       <div class="oddslabels">${oddsLabels(m)}</div>
       <div class="rationale">💡 ${m.ai_rationale}</div>
+      ${lockBadge(m)}
       <div class="picks">${pickButtons(m, mine)}</div>
       <div class="conf-row${mine ? ' on' : ''}" id="conf-${m.id}">
         <span>Confidence</span>
-        <input type="range" min="51" max="99" value="${confPct}" id="slider-${m.id}" />
+        <input type="range" min="51" max="99" value="${confPct}" id="slider-${m.id}" ${locked ? "disabled" : ""} />
         <span class="conf-val" id="confval-${m.id}">${confPct}%</span>
       </div>
       ${res ? `<span class="result-tag">✓ Result: ${outcomeLabel(m, res)}${mine ? (mine===res ? " — you nailed it!" : " — different pick") : ""}</span>` : ""}
       <button class="golive-btn" data-live="${m.id}">▶ Simulate (demo)</button>
     `;
     card.querySelectorAll(".pick-btn").forEach(btn => {
+      if (locked) { btn.style.opacity = "0.45"; btn.style.cursor = "default"; return; }
       btn.onclick = () => pick(m.id, btn.dataset.o);
     });
     const slider = card.querySelector(`#slider-${m.id}`);
     slider.oninput = () => {
+      if (locked) return;
       const v = parseInt(slider.value);
       card.querySelector(`#confval-${m.id}`).textContent = v + "%";
       clearTimeout(_confTimers[m.id]);
@@ -370,11 +408,12 @@ async function submitPick(matchId, outcome, conf) {
 
 async function pick(matchId, outcome) {
   if (!name()) { toast("Enter your name first"); document.getElementById("name").focus(); return; }
+  const m = MATCHES.find(x => x.id === matchId);
+  if (m && isLocked(m)) { toast("🔒 Picks locked — match has kicked off"); return; }
   try {
     const conf = MY_CONFS[matchId] || 0.65;
     await submitPick(matchId, outcome, conf);
     MY_PICKS[matchId] = outcome;
-    // Show the confidence slider and set its value
     const row = document.getElementById(`conf-${matchId}`);
     if (row) row.classList.add("on");
     renderMatches();
@@ -410,6 +449,26 @@ async function loadMyPicks() {
   renderMatches();
 }
 
+function breakdownRow(p) {
+  if (!p.breakdown || !p.breakdown.length) return "";
+  const bdId = `bd-${p.name.replace(/\W/g,'_')}`;
+  const rows = p.breakdown.map(b => {
+    const confLabel = b.conf != null ? ` · ${b.conf}% conf` : "";
+    const scoreClass = b.correct ? "good" : "bad";
+    const icon = b.correct ? "✓" : "✗";
+    return `<tr>
+      <td class="bd-match">${b.match}</td>
+      <td>${icon} ${b.pick}${confLabel}</td>
+      <td class="bd-score ${scoreClass}">${b.score}</td>
+    </tr>`;
+  }).join("");
+  return `<tr id="${bdId}" style="display:none">
+    <td colspan="4" style="padding:0 10px 12px">
+      <table class="breakdown-table">${rows}</table>
+    </td>
+  </tr>`;
+}
+
 async function loadLeaderboard() {
   const d = await api("/api/leaderboard");
   const el = document.getElementById("leaderboard");
@@ -420,17 +479,31 @@ async function loadLeaderboard() {
   const rows = d.players.map((p, i) => {
     const cls = [p.is_ai ? "ai-row" : "", (!p.is_ai && p.name === name()) ? "me" : ""].join(" ").trim();
     const rank = p.avg_brier === null ? "—" : (i + 1);
-    const brier = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : Math.round((1 - p.avg_brier / 2) * 100);
+    const score = p.avg_brier === null ? "<span style='color:var(--muted)'>no results yet</span>" : Math.round((1 - p.avg_brier / 2) * 100);
     const acc = p.total ? `${p.correct}/${p.total}` : "—";
+    const hasBreakdown = p.breakdown && p.breakdown.length > 0;
+    const bdId = `bd-${p.name.replace(/\W/g,'_')}`;
+    const toggle = hasBreakdown
+      ? `<button class="breakdown-toggle" onclick="toggleBreakdown('${bdId}', this)">▸ per-match breakdown</button>`
+      : "";
     return `<tr class="${cls}">
-      <td>${rank}</td><td>${p.name}</td>
-      <td class="num">${brier}</td><td class="num">${acc}</td>
-    </tr>`;
+      <td>${rank}</td>
+      <td>${p.name}${toggle}</td>
+      <td class="num">${score}</td><td class="num">${acc}</td>
+    </tr>${breakdownRow(p)}`;
   }).join("");
   el.innerHTML = `<table>
     <thead><tr><th>#</th><th>Player</th><th class="num">Score ↑</th><th class="num">Correct</th></tr></thead>
     <tbody>${rows}</tbody></table>
     ${d.resolved_count === 0 ? `<p class="hint">Standings update automatically as real matches finish.</p>` : ""}`;
+}
+
+function toggleBreakdown(id, btn) {
+  const row = document.getElementById(id);
+  if (!row) return;
+  const open = row.style.display !== "none";
+  row.style.display = open ? "none" : "";
+  btn.textContent = (open ? "▸" : "▾") + " per-match breakdown";
 }
 
 function renderDemoControls() {
@@ -589,6 +662,7 @@ function renderLivePanel(s) {
   tickLive();                                  // show any real in-play match now
   setInterval(tickLive, 2000);                 // live panel refresh
   setInterval(() => { if (!SIM_ACTIVE) refreshScores(); }, 30000);  // pull real settlements
+  setInterval(() => renderMatches(), 30000);                        // refresh countdown badges
 })();
 </script>
 </body>

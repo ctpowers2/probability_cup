@@ -190,6 +190,14 @@ def _fmt_when(iso: str) -> str:
         return "Upcoming"
 
 
+def _parse_kickoff_ts(iso: str) -> float | None:
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
 def fetch_live_matches() -> list[dict]:
     """Pull the real upcoming fixtures from the tournament API (may raise)."""
     client = SportsPredictClient(API_KEY)
@@ -201,7 +209,9 @@ def fetch_live_matches() -> list[dict]:
         if len(parts) != 2:
             continue
         a, b = _resolve_code(parts[0]), _resolve_code(parts[1])
-        matches.append(_build_match(m["id"], a, b, _fmt_when(m.get("opening_time", ""))))
+        match = _build_match(m["id"], a, b, _fmt_when(m.get("opening_time", "")))
+        match["kickoff_ts"] = _parse_kickoff_ts(m.get("opening_time", ""))
+        matches.append(match)
     return matches
 
 
@@ -387,11 +397,16 @@ def _save(state: dict) -> None:
     os.replace(tmp, STORE_PATH)
 
 
+class PickLockedError(Exception):
+    pass
+
+
 def record_pick(user: str, match_id: str, pick: str, conf: float | None = None) -> None:
     """Store (or overwrite) a user's pick for a match.
 
     pick ∈ OUTCOMES; conf is optional confidence in [0.51, 0.99].
     Stored as {"pick": "a", "conf": 0.75} or plain "a" for full confidence.
+    Raises PickLockedError if kickoff has already passed.
     """
     user = user.strip()
     if not user:
@@ -401,6 +416,9 @@ def record_pick(user: str, match_id: str, pick: str, conf: float | None = None) 
     match = _index().get(match_id)
     if match is None:
         raise ValueError(f"Unknown match: {match_id!r}")
+    kickoff_ts = match.get("kickoff_ts")
+    if kickoff_ts is not None and time.time() >= kickoff_ts:
+        raise PickLockedError("Picks are locked — this match has already kicked off")
     if conf is None:
         entry = pick
     else:
@@ -460,10 +478,18 @@ def _pick_choice(entry) -> str:
     return entry["pick"] if isinstance(entry, dict) else entry
 
 
+def _match_label(mid: str, meta: dict) -> str:
+    codes = meta.get(mid)
+    if not codes:
+        return mid
+    return f"{team_name(codes[0])} vs {team_name(codes[1])}"
+
+
 def leaderboard() -> dict:
     """
     Score every human and the AI on the same resolved matches with Brier score.
     Returns {players: [...], resolved_count: int}. Players sorted by avg Brier.
+    Each player row includes a 'breakdown' list of per-match score details.
     """
     sync_real_results()  # pull in any real match results before scoring
     state = _load()
@@ -478,30 +504,58 @@ def leaderboard() -> dict:
         scored = [(mid, p) for mid, p in user_picks.items() if mid in results]
         if not scored:
             rows.append({"name": user, "is_ai": False, "picks": 0,
-                         "avg_brier": None, "correct": 0, "total": 0})
+                         "avg_brier": None, "correct": 0, "total": 0, "breakdown": []})
             continue
-        briers = [_brier(_pick_to_vec(p), results[mid]) for mid, p in scored]
-        correct = sum(1 for mid, p in scored if _pick_choice(p) == results[mid])
+        breakdown = []
+        brier_vals = []
+        for mid, p in scored:
+            outcome = results[mid]
+            b = _brier(_pick_to_vec(p), outcome)
+            brier_vals.append(b)
+            chosen = _pick_choice(p)
+            conf = p["conf"] if isinstance(p, dict) else 1.0
+            codes = meta.get(mid, [None, None])
+            outcome_name = team_name(codes[0] if outcome == "a" else codes[1]) if codes[0] else outcome
+            breakdown.append({
+                "match": _match_label(mid, meta),
+                "pick": team_name(codes[0] if chosen == "a" else codes[1]) if codes[0] else chosen,
+                "conf": round(conf * 100),
+                "correct": chosen == outcome,
+                "score": round((1 - b / 2) * 100),
+            })
+        correct = sum(1 for b in breakdown if b["correct"])
         rows.append({
             "name": user, "is_ai": False, "picks": len(scored),
-            "avg_brier": round(sum(briers) / len(briers), 4),
+            "avg_brier": round(sum(brier_vals) / len(brier_vals), 4),
             "correct": correct, "total": len(scored),
+            "breakdown": sorted(breakdown, key=lambda x: x["match"]),
         })
 
     # The AI, scored on every resolved match using its full probability vector
     ai_scored = []
+    ai_breakdown = []
     for mid, outcome in results.items():
         codes = _codes_for(mid, meta)
         if not codes:
             continue
         odds = ai_odds(*codes)
-        ai_scored.append((_brier(odds, outcome),
-                          max(OUTCOMES, key=lambda o: odds[o]) == outcome))
+        b = _brier(odds, outcome)
+        correct = max(OUTCOMES, key=lambda o: odds[o]) == outcome
+        ai_scored.append((b, correct))
+        outcome_name = team_name(codes[0] if outcome == "a" else codes[1])
+        ai_breakdown.append({
+            "match": _match_label(mid, meta),
+            "pick": f"{team_name(codes[0])} {round(odds['a']*100)}% / {team_name(codes[1])} {round(odds['b']*100)}%",
+            "conf": None,
+            "correct": correct,
+            "score": round((1 - b / 2) * 100),
+        })
     if ai_scored:
         rows.append({
             "name": "🤖 The AI", "is_ai": True, "picks": len(ai_scored),
             "avg_brier": round(sum(b for b, _ in ai_scored) / len(ai_scored), 4),
             "correct": sum(1 for _, c in ai_scored if c), "total": len(ai_scored),
+            "breakdown": sorted(ai_breakdown, key=lambda x: x["match"]),
         })
 
     # Sort: scored players by avg Brier (asc); unscored players last.

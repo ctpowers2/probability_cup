@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import pool
+from .pool import PickLockedError
 from .live import SIM
 
 app = FastAPI(title="Probability Cup — Beat the AI")
@@ -53,6 +54,8 @@ def api_user_picks(user: str):
 def api_pick(body: PickIn):
     try:
         pool.record_pick(body.user, body.match_id, body.pick, body.conf)
+    except PickLockedError as e:
+        raise HTTPException(status_code=423, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
