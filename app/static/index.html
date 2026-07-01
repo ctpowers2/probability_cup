@@ -513,13 +513,12 @@ function projectedScoreLine(s) {
   const conf = MY_CONFS[s.match_id] || 0.65;
 
   // Determine projected outcome from current scoreline
+  const outcomes = s.ai.draw !== undefined ? ["a", "draw", "b"] : ["a", "b"];
   let projected;
   if (s.score_a > s.score_b) projected = "a";
   else if (s.score_b > s.score_a) projected = "b";
-  else projected = "draw";
-
-  // Build prob vector (mirrors _pick_to_vec in pool.py)
-  const outcomes = s.ai.draw !== undefined ? ["a", "draw", "b"] : ["a", "b"];
+  else if (outcomes.includes("draw")) projected = "draw";
+  else return ""; // knockout, still level — no projection until someone leads
   const others = outcomes.filter(o => o !== pick);
   const rest = (1 - conf) / others.length;
   const vec = Object.fromEntries(outcomes.map(o => [o, o === pick ? conf : rest]));
